@@ -10,7 +10,7 @@ app = Flask(__name__)
 # FLORANCE AI CONFIGURATION
 # --------------------------------
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3.8-flash"
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
