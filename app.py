@@ -1,5 +1,7 @@
 
 import os
+import time
+import random
 import requests
 from flask import Flask, render_template, request, jsonify
 from ddgs import DDGS
@@ -94,6 +96,60 @@ def needs_search(message):
     message = message.lower()
 
     return any(word in message for word in keywords)
+
+
+# --------------------------------
+# GEMINI CONNECTION WITH RETRIES
+# --------------------------------
+
+def connect_gemini(payload):
+
+    retry_codes = [429, 500, 502, 503, 504]
+
+    for attempt in range(3):
+
+        try:
+
+            response = requests.post(
+                GEMINI_URL,
+                params={"key": GEMINI_API_KEY},
+                json=payload,
+                timeout=90
+            )
+
+            if response.status_code in retry_codes:
+
+                print(
+                    f"Gemini temporary error: "
+                    f"{response.status_code}"
+                )
+
+                if attempt < 2:
+
+                    delay = (2 ** attempt) + random.uniform(0, 0.5)
+
+                    print(f"Retrying in {delay:.1f} seconds")
+
+                    time.sleep(delay)
+                    continue
+
+            response.raise_for_status()
+
+            return response
+
+        except requests.exceptions.Timeout:
+
+            print("Gemini request timed out")
+
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+
+            raise
+
+    raise requests.exceptions.RequestException(
+        "Gemini unavailable after retries"
+    )
 
 
 # --------------------------------
@@ -234,34 +290,37 @@ def chat():
             }]
         })
 
-        # Connect to Gemini
+        # Gemini request
 
-        response = requests.post(
-            GEMINI_URL,
-            params={
-                "key": GEMINI_API_KEY
+        payload = {
+            "system_instruction": {
+                "parts": [{
+                    "text": SYSTEM_PROMPT
+                }]
             },
-            json={
-                "system_instruction": {
-                    "parts": [{
-                        "text": SYSTEM_PROMPT
-                    }]
-                },
-                "contents": contents,
-                "generationConfig": {
-                    "temperature": 0.7,
-                    "maxOutputTokens": 500
-                }
-            },
-            timeout=90
-        )
+            "contents": contents,
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 500
+            }
+        }
 
-        response.raise_for_status()
+        response = connect_gemini(payload)
 
         result = response.json()
 
+        candidates = result.get("candidates", [])
+
+        if not candidates:
+
+            print("Gemini returned no candidates:", result)
+
+            return jsonify({
+                "reply": "I couldn't generate an answer. Please try again."
+            }), 502
+
         answer = (
-            result.get("candidates", [{}])[0]
+            candidates[0]
             .get("content", {})
             .get("parts", [{}])[0]
             .get("text", "")
@@ -287,14 +346,48 @@ def chat():
 
     except requests.exceptions.HTTPError as error:
 
-        print("Gemini API error:", error)
+        status = (
+            error.response.status_code
+            if error.response is not None
+            else 502
+        )
+
+        print("Gemini API HTTP error:", status)
 
         if error.response is not None:
             print("Gemini response:", error.response.text[:2000])
 
-        return jsonify({
-            "reply": "The AI service is temporarily unavailable. Please check the server logs."
-        }), 502
+        if status == 503:
+            message = (
+                "Gemini is currently overloaded. "
+                "Please try again in a few minutes."
+            )
+
+        elif status == 429:
+            message = (
+                "Gemini request limit reached. "
+                "Please try again later."
+            )
+
+        elif status in [401, 403]:
+            message = (
+                "Gemini authentication failed. "
+                "Please check your API configuration."
+            )
+
+        elif status == 404:
+            message = (
+                "The configured Gemini model was not found. "
+                "Please check the model name."
+            )
+
+        else:
+            message = (
+                "The AI service encountered an error. "
+                "Please try again later."
+            )
+
+        return jsonify({"reply": message}), status
 
     except requests.exceptions.RequestException as error:
 
