@@ -19,12 +19,14 @@ body {
     color: white;
     height: 100vh;
     display: flex;
+    overflow: hidden;
 }
 
 .sidebar {
     width: 250px;
-    background: #101827;
+    background: #171f31;
     padding: 20px;
+    border-right: 1px solid #26364d;
     display: flex;
     flex-direction: column;
     gap: 15px;
@@ -55,6 +57,7 @@ body {
     margin-top: auto;
     color: #9baec3;
     font-size: 13px;
+    line-height: 1.6;
 }
 
 .main {
@@ -84,6 +87,7 @@ header {
 .welcome {
     text-align: center;
     margin: auto;
+    line-height: 2;
 }
 
 .welcome h1 {
@@ -97,9 +101,9 @@ header {
 }
 
 .message {
-    max-width: 80%;
     padding: 14px 18px;
     border-radius: 15px;
+    max-width: 80%;
     line-height: 1.6;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -117,13 +121,14 @@ header {
 }
 
 .input-area {
-    padding: 18px;
+    padding: 15px;
+    background: #171f31;
+    border-top: 1px solid #253248;
     display: flex;
     gap: 10px;
-    border-top: 1px solid #253248;
 }
 
-input {
+#message {
     flex: 1;
     min-width: 0;
     padding: 16px;
@@ -139,7 +144,7 @@ input {
     background: #06b6d4;
     color: #06121c;
     font-weight: bold;
-    padding: 0 25px;
+    padding: 0 22px;
     border: none;
     border-radius: 12px;
     cursor: pointer;
@@ -243,7 +248,9 @@ function addMessage(text, type) {
 
     const welcome = document.getElementById("welcome");
 
-    if (welcome) welcome.remove();
+    if (welcome) {
+        welcome.remove();
+    }
 
     const div = document.createElement("div");
 
@@ -251,9 +258,9 @@ function addMessage(text, type) {
     div.textContent = text;
 
     chat.appendChild(div);
-
     chat.scrollTop = chat.scrollHeight;
 
+    return div;
 }
 
 async function sendMessage() {
@@ -267,14 +274,10 @@ async function sendMessage() {
     input.value = "";
     sendButton.disabled = true;
 
-    const loading = document.createElement("div");
-
-    loading.className = "message bot";
-    loading.textContent = "Florence AI is thinking...";
-
-    chat.appendChild(loading);
-
-    chat.scrollTop = chat.scrollHeight;
+    const loading = addMessage(
+        "Florence AI is thinking...",
+        "bot"
+    );
 
     try {
 
@@ -283,7 +286,8 @@ async function sendMessage() {
             method: "POST",
 
             headers: {
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Accept": "application/json"
             },
 
             body: JSON.stringify({
@@ -293,29 +297,47 @@ async function sendMessage() {
 
         });
 
-        const data = await response.json();
+        // Read response safely before parsing JSON
 
-        loading.remove();
+        const responseText = await response.text();
 
-        if (!response.ok) {
-            throw new Error(data.reply || "Server error");
+        let data;
+
+        try {
+            data = JSON.parse(responseText);
+        } catch (parseError) {
+
+            console.error(
+                "Invalid server response:",
+                responseText.substring(0, 500)
+            );
+
+            throw new Error(
+                "Server returned HTML instead of JSON. HTTP status: "
+                + response.status
+            );
         }
 
-        const reply = data.reply || "I couldn't generate an answer.";
+        if (!response.ok) {
+            throw new Error(
+                data.reply || "Server error: " + response.status
+            );
+        }
 
-        addMessage(reply, "bot");
+        const reply = data.reply || "No answer received.";
 
-        history.push({
-            role: "user",
-            content: message
-        });
+        loading.textContent = reply;
 
-        history.push({
-            role: "assistant",
-            content: reply
-        });
+        history.push(
+            { role: "user", content: message },
+            { role: "assistant", content: reply }
+        );
+
+        history = history.slice(-12);
 
     } catch (error) {
+
+        console.error("Florence AI error:", error);
 
         loading.remove();
 
@@ -330,7 +352,6 @@ async function sendMessage() {
         input.focus();
 
     }
-
 }
 
 function newChat() {
@@ -344,15 +365,11 @@ function newChat() {
     `;
 
     history = [];
-
     input.value = "";
-
 }
 
 function clearChat() {
-
     newChat();
-
 }
 
 input.addEventListener("keydown", function(event) {
