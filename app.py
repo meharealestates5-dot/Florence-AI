@@ -2,7 +2,7 @@
 import os
 import time
 import requests
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response
 from ddgs import DDGS
 
 app = Flask(__name__)
@@ -23,6 +23,8 @@ GEMINI_URL = (
 )
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+WEBSITE_URL = "https://florence-ai-1.onrender.com"
 
 print("Gemini configured:", bool(GEMINI_API_KEY))
 print("Groq configured:", bool(GROQ_API_KEY))
@@ -56,6 +58,42 @@ For mathematics, show calculations when useful.
 For programming, provide working code and explanations.
 Keep simple answers concise.
 """
+
+
+# --------------------------------
+# GOOGLE SITEMAP
+# --------------------------------
+
+@app.route("/sitemap.xml")
+def sitemap():
+
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>{WEBSITE_URL}/</loc>
+        <changefreq>weekly</changefreq>
+        <priority>1.0</priority>
+    </url>
+</urlset>
+"""
+
+    return Response(xml, mimetype="application/xml")
+
+
+# --------------------------------
+# ROBOTS.TXT
+# --------------------------------
+
+@app.route("/robots.txt")
+def robots():
+
+    content = f"""User-agent: *
+Allow: /
+
+Sitemap: {WEBSITE_URL}/sitemap.xml
+"""
+
+    return Response(content, mimetype="text/plain")
 
 
 # --------------------------------
@@ -146,9 +184,6 @@ def prepare_history(history):
                     "text": content[:4000]
                 }]
             })
-
-    # Gemini expects alternating user/model messages.
-    # Merge consecutive messages with the same role.
 
     merged = []
 
@@ -289,8 +324,6 @@ def ask_groq(history, message, web_information):
         }
     ]
 
-    # Previous conversation
-
     for item in history[-8:]:
 
         if not isinstance(item, dict):
@@ -309,8 +342,6 @@ def ask_groq(history, message, web_information):
                 "role": role,
                 "content": content[:4000]
             })
-
-    # Current question and search information
 
     current_message = message
 
@@ -381,11 +412,21 @@ def ask_groq(history, message, web_information):
 def home():
 
     return render_template("index.html")
+
+
+# --------------------------------
+# GOOGLE VERIFICATION
+# --------------------------------
+
 @app.route("/google727dc86e6654fcd4.html")
 def google_verification():
-    return "google-site-verification: google727dc86e6654fcd4.html", 200, {
-        "Content-Type": "text/html"
-    }
+
+    return (
+        "google-site-verification: google727dc86e6654fcd4.html",
+        200,
+        {"Content-Type": "text/html"}
+    )
+
 
 # --------------------------------
 # STATUS CHECK
@@ -503,8 +544,6 @@ def chat():
 
         contents = prepare_history(history)
 
-        # Add search results to current question
-
         current_message = message
 
         if web_information:
@@ -526,9 +565,7 @@ def chat():
 
         })
 
-        # --------------------------------
         # PRIMARY AI: GEMINI
-        # --------------------------------
 
         if GEMINI_API_KEY:
 
@@ -556,9 +593,7 @@ def chat():
 
                 print("Switching to backup AI: Groq")
 
-        # --------------------------------
         # BACKUP AI: GROQ
-        # --------------------------------
 
         if GROQ_API_KEY:
 
@@ -587,8 +622,6 @@ def chat():
             except Exception as error:
 
                 print("Groq backup failed:", str(error))
-
-        # Both providers failed
 
         return jsonify({
 
