@@ -112,7 +112,7 @@ def connect_gemini(payload):
 
     retry_codes = [429, 500, 502, 503, 504]
 
-    for attempt in range(3):
+    for attempt in range(1):
 
         try:
             response = requests.post(
