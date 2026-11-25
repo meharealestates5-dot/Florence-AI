@@ -6,6 +6,8 @@ import re
 import threading
 import requests
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from functools import lru_cache
 from flask import Flask, render_template, request, jsonify, Response
 from ddgs import DDGS
@@ -35,6 +37,12 @@ print("Gemini configured:", bool(GEMINI_API_KEY))
 print("Groq configured:", bool(GROQ_API_KEY))
 
 
+def current_date():
+    return datetime.now(
+        ZoneInfo("Asia/Kolkata")
+    ).strftime("%Y-%m-%d")
+
+
 # ==========================================
 # SYSTEM PROMPT
 # ==========================================
@@ -44,7 +52,11 @@ You are Florence AI, a helpful general-purpose AI assistant.
 
 Your creator is M. Mehanethra.
 
-Your responsibilities:
+You must identify yourself as Florence AI.
+Never claim that you are ChatGPT or another assistant.
+
+YOUR RESPONSIBILITIES:
+
 1. Answer questions from all subjects.
 2. Help with mathematics and calculations.
 3. Explain science and technology.
@@ -56,8 +68,39 @@ Your responsibilities:
 9. Give accurate, direct and useful answers.
 10. Admit when you are unsure instead of inventing facts.
 
-You are Florence AI.
-Never claim that you are ChatGPT or Qwen.
+CURRENT INFORMATION RULES:
+
+1. When internet search results are supplied, use them
+   as the primary evidence for current facts.
+
+2. Never answer a current-information question using
+   outdated stored knowledge when newer evidence is supplied.
+
+3. Check publication dates when available.
+
+4. Prefer official government websites, official
+   announcements and reliable news organisations.
+
+5. Never invent election results, dates, names,
+   prices, news or other facts.
+
+6. Distinguish confirmed facts from unverified reports.
+
+7. Cite sources using their source numbers, such as [1] or [2].
+
+8. If search results do not establish the answer,
+   clearly say that the information could not be verified.
+
+9. Do not claim that information is current unless
+   the available evidence supports that claim.
+
+10. Never treat an old search result as proof of a
+    current position or office.
+
+11. The current date will be provided in the conversation.
+    Use it when interpreting current-information questions.
+
+GENERAL ANSWERING RULES:
 
 For mathematics, show calculations when useful.
 For programming, provide working code and explanations.
@@ -65,6 +108,8 @@ Keep simple answers concise.
 
 For geographical distances, use verified distance data
 when available. Never invent road distances.
+
+You are Florence AI, created by M. Mehanethra.
 """
 
 
@@ -112,29 +157,167 @@ def search_web(query):
 
     try:
 
+        today = current_date()
+
+        search_query = (
+            f"{query} latest information "
+            f"{today}"
+        )
+
+        print("DuckDuckGo search:", search_query)
+
         with DDGS() as ddgs:
 
             results = list(
-                ddgs.text(query, max_results=3)
+                ddgs.text(
+                    search_query,
+                    max_results=6
+                )
             )
 
         information = []
 
-        for item in results:
+        for index, item in enumerate(results, 1):
 
             information.append(
+                f"Source ID: {index}\n"
                 f"Title: {item.get('title', '')}\n"
                 f"Information: {item.get('body', '')}\n"
-                f"Source: {item.get('href', '')}"
+                f"Date: {item.get('date', 'Not provided')}\n"
+                f"Source URL: {item.get('href', '')}"
             )
 
         return "\n\n".join(information)
 
     except Exception as error:
 
-        print("Web search error:", error)
+        print("Web search error:", str(error))
 
         return ""
+
+
+# ==========================================
+# FORMAT SOURCE LINKS
+# ==========================================
+
+def format_sources(web_information):
+
+    sources = []
+    seen = set()
+
+    for block in web_information.split("\n\n"):
+
+        title = ""
+        url = ""
+
+        for line in block.splitlines():
+
+            if line.startswith("Title:"):
+
+                title = line.replace(
+                    "Title:", "", 1
+                ).strip()
+
+            elif line.startswith("Source URL:"):
+
+                url = line.replace(
+                    "Source URL:", "", 1
+                ).strip()
+
+        if (
+            url.startswith(("https://", "http://"))
+            and url not in seen
+        ):
+
+            seen.add(url)
+
+            safe_title = (
+                title.replace("[", "(")
+                .replace("]", ")")
+            )
+
+            sources.append(
+                f"- [{safe_title or url}]({url})"
+            )
+
+    if not sources:
+
+        return ""
+
+    return (
+        "\n\n### Sources\n"
+        + "\n".join(sources)
+    )
+
+
+# ==========================================
+# DETECT CURRENT INFORMATION QUESTIONS
+# ==========================================
+
+def needs_search(message):
+
+    message = message.lower().strip()
+
+    patterns = [
+
+        # Current and recent information
+
+        r"\b(latest|currently|current|today|now|recent)\b",
+
+        r"\b(this week|this month|this year)\b",
+
+        r"\b(news|headlines|breaking news|live updates)\b",
+
+        r"\b(weather|forecast|traffic now)\b",
+
+        # Prices and changing information
+
+        r"\b(price today|stock price|gold rate|silver rate)\b",
+
+        r"\b(petrol price|diesel price|exchange rate)\b",
+
+        r"\b(current price|latest price|today's price)\b",
+
+        # Government and political office holders
+
+        r"\b(chief minister|prime minister|president|"
+        r"governor|minister|mayor)\b",
+
+        r"\b(current government|present government)\b",
+
+        # Elections
+
+        r"\b(who won|winner|election result|election results)\b",
+
+        r"\b(assembly election|general election|vote count)\b",
+
+        r"\b(election results|election news)\b",
+
+        # Recent events
+
+        r"\b(what happened|what is happening)\b",
+
+        r"\b(latest update|recent update|new announcement)\b",
+
+        r"\b(is .+ still|has .+ changed|when will .+ happen)\b",
+
+        # Current leadership questions
+
+        r"\b(who is|who's|name the)\b.*"
+        r"\b(chief minister|prime minister|president|"
+        r"governor|minister|leader|mayor)\b",
+
+        # Specific current-year events
+
+        r"\b(2026|2027)\b.*"
+        r"\b(election|result|news|update|winner)\b"
+
+    ]
+
+    return any(
+        re.search(pattern, message)
+        for pattern in patterns
+    )
 
 
 # ==========================================
@@ -159,12 +342,10 @@ last_nominatim_request = 0
 
 def extract_distance_places(message):
 
-    text = message.strip()
-
     text = re.sub(
         r"\s+",
         " ",
-        text
+        message.strip()
     )
 
     patterns = [
@@ -193,11 +374,13 @@ def extract_distance_places(message):
 
         if match:
 
-            place1 = match.group(1)
-            place2 = match.group(2)
+            place1 = clean_place_name(
+                match.group(1)
+            )
 
-            place1 = clean_place_name(place1)
-            place2 = clean_place_name(place2)
+            place2 = clean_place_name(
+                match.group(2)
+            )
 
             if place1 and place2:
 
@@ -224,17 +407,13 @@ def clean_place_name(place):
         flags=re.IGNORECASE
     )
 
-    place = place.strip(" .,?!")
-
-    return place
+    return place.strip(" .,?!")
 
 
 @lru_cache(maxsize=256)
 def geocode_place(place):
 
     global last_nominatim_request
-
-    query = place
 
     known_countries = [
         "india", "usa", "united states", "uk",
@@ -250,7 +429,7 @@ def geocode_place(place):
     )
 
     params = {
-        "q": query,
+        "q": place,
         "format": "jsonv2",
         "limit": 1
     }
@@ -258,16 +437,13 @@ def geocode_place(place):
     if not has_country:
 
         params["countrycodes"] = "in"
+        params["q"] = place + ", India"
 
-        if "india" not in place.lower():
-
-            params["q"] = place + ", India"
-
-    # Respect public Nominatim request limits.
     with nominatim_lock:
 
         wait_time = (
-            1.1 - (time.monotonic() - last_nominatim_request)
+            1.1
+            - (time.monotonic() - last_nominatim_request)
         )
 
         if wait_time > 0:
@@ -377,7 +553,6 @@ def format_travel_time(minutes):
     total_minutes = round(minutes)
 
     hours = total_minutes // 60
-
     remaining_minutes = total_minutes % 60
 
     if hours:
@@ -402,15 +577,9 @@ def get_distance_answer(message):
 
     try:
 
-        print(
-            "Distance request:",
-            name1,
-            "to",
-            name2
-        )
+        print("Distance request:", name1, "to", name2)
 
         place1 = geocode_place(name1)
-
         place2 = geocode_place(name2)
 
         straight_distance = calculate_straight_distance(
@@ -440,12 +609,11 @@ def get_distance_answer(message):
 | Straight-line distance | {straight_distance:.1f} km |
 | Estimated driving time | {travel_time} |
 
-**Distance information:** OpenStreetMap geographical data
-and OSRM driving-route data.
+**Data:** OpenStreetMap and OSRM.
 
-**Important:** Travel time is a route estimate and does
-not include live traffic. Actual distance can vary depending
-on the exact starting point, destination and selected route.
+**Important:** Travel time does not include live traffic.
+Actual distance can vary depending on exact locations
+and the selected route.
 """
 
         except Exception as route_error:
@@ -462,58 +630,21 @@ on the exact starting point, destination and selected route.
 
 **Road distance:** Currently unavailable.
 
-The straight-line distance was calculated using the
-geographical coordinates of both locations.
-
-I cannot verify the driving distance right now, so I will
-not guess it.
+I cannot verify the driving distance right now,
+so I will not guess it.
 """
 
         return answer.strip()
 
     except Exception as error:
 
-        print(
-            "Distance calculation error:",
-            str(error)
-        )
+        print("Distance calculation error:", str(error))
 
         return (
             f"I could not verify the distance between "
             f"{name1} and {name2} right now. "
-            "Please check the spelling or try again later. "
-            "I do not want to give you an incorrect distance."
+            "Please check the spelling or try again later."
         )
-
-
-# ==========================================
-# DECIDE WHEN TO SEARCH
-# ==========================================
-
-def needs_search(message):
-
-    keywords = [
-        "latest",
-        "today",
-        "current",
-        "news",
-        "headlines",
-        "breaking news",
-        "recent",
-        "this week",
-        "weather",
-        "live updates",
-        "price today",
-        "traffic now",
-        "who is the current"
-    ]
-
-    message = message.lower()
-
-    return any(
-        word in message
-        for word in keywords
-    )
 
 
 # ==========================================
@@ -582,56 +713,34 @@ def connect_gemini(payload):
 
     for attempt in range(3):
 
-        try:
+        response = requests.post(
+            GEMINI_URL,
 
-            response = requests.post(
-                GEMINI_URL,
+            headers={
+                "x-goog-api-key": GEMINI_API_KEY,
+                "Content-Type": "application/json"
+            },
 
-                headers={
-                    "x-goog-api-key": GEMINI_API_KEY,
-                    "Content-Type": "application/json"
-                },
+            json=payload,
 
-                json=payload,
+            timeout=60
+        )
 
-                timeout=60
-            )
-
-            if response.status_code in retry_codes:
-
-                print(
-                    "Gemini temporary error:",
-                    response.status_code
-                )
-
-                if attempt < 2:
-
-                    time.sleep(2 ** attempt)
-
-                    continue
-
-            response.raise_for_status()
-
-            return response
-
-        except requests.exceptions.Timeout:
+        if response.status_code in retry_codes:
 
             print(
-                "Gemini timeout:",
-                attempt + 1
+                "Gemini temporary error:",
+                response.status_code
             )
 
             if attempt < 2:
 
                 time.sleep(2 ** attempt)
-
                 continue
 
-            raise
+        response.raise_for_status()
 
-        except requests.exceptions.RequestException:
-
-            raise
+        return response
 
     raise RuntimeError(
         "Gemini unavailable after retries"
@@ -639,24 +748,30 @@ def connect_gemini(payload):
 
 
 # ==========================================
-# GEMINI AI
+# GEMINI PRIMARY AI
 # ==========================================
 
 def ask_gemini(contents):
+
+    dated_prompt = (
+        SYSTEM_PROMPT
+        + "\n\nCURRENT DATE IN INDIA: "
+        + current_date()
+    )
 
     payload = {
 
         "systemInstruction": {
             "parts": [{
-                "text": SYSTEM_PROMPT
+                "text": dated_prompt
             }]
         },
 
         "contents": contents,
 
         "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 1000
+            "temperature": 0.4,
+            "maxOutputTokens": 1500
         }
 
     }
@@ -707,11 +822,17 @@ def ask_groq(history, message, web_information):
             "Groq API key is missing"
         )
 
+    dated_prompt = (
+        SYSTEM_PROMPT
+        + "\n\nCURRENT DATE IN INDIA: "
+        + current_date()
+    )
+
     messages = [
 
         {
             "role": "system",
-            "content": SYSTEM_PROMPT
+            "content": dated_prompt
         }
 
     ]
@@ -733,7 +854,6 @@ def ask_groq(history, message, web_information):
             messages.append({
 
                 "role": role,
-
                 "content": content[:4000]
 
             })
@@ -743,16 +863,22 @@ def ask_groq(history, message, web_information):
     if web_information:
 
         current_message = (
-            "Internet search results for reference:\n\n"
-            + web_information[:10000]
-            + "\n\nCurrent question:\n"
+            "IMPORTANT: Use these internet search results "
+            "as your primary evidence for current facts.\n\n"
+            "Today's date: "
+            + current_date()
+            + "\n\n"
+            + web_information[:12000]
+            + "\n\n"
+            + "Do not invent facts or dates. "
+            + "If evidence is insufficient, say so.\n\n"
+            + "USER QUESTION:\n"
             + message
         )
 
     messages.append({
 
         "role": "user",
-
         "content": current_message
 
     })
@@ -763,9 +889,9 @@ def ask_groq(history, message, web_information):
 
         "messages": messages,
 
-        "temperature": 0.7,
+        "temperature": 0.4,
 
-        "max_completion_tokens": 1000
+        "max_completion_tokens": 1500
 
     }
 
@@ -879,6 +1005,8 @@ def health():
             GROQ_API_KEY
         ),
 
+        "web_search": "enabled",
+
         "distance_calculator": "enabled",
 
         "distance_provider": "OpenStreetMap and OSRM"
@@ -919,7 +1047,7 @@ def chat():
                 "reply": "Please enter a question."
             }), 400
 
-        # Creator identification
+        # CREATOR IDENTIFICATION
 
         creator_questions = [
             "who created you",
@@ -941,12 +1069,13 @@ def chat():
                     "by M. Mehanethra!"
                 ),
 
-                "assistant": "Florence AI"
+                "assistant": "Florence AI",
+
+                "provider": "Florence AI"
 
             })
 
         # DISTANCE CALCULATION
-        # This runs independently of Gemini and Groq.
 
         distance_answer = get_distance_answer(message)
 
@@ -962,7 +1091,7 @@ def chat():
 
             })
 
-        # Check API configuration
+        # API CONFIGURATION CHECK
 
         if not GEMINI_API_KEY and not GROQ_API_KEY:
 
@@ -975,7 +1104,7 @@ def chat():
 
             }), 503
 
-        # Conversation history
+        # CONVERSATION HISTORY
 
         history = data.get("history", [])
 
@@ -985,20 +1114,42 @@ def chat():
 
         history = history[-8:]
 
-        # Internet search
+        # INTERNET SEARCH
 
         web_information = ""
 
-        if needs_search(message):
+        search_required = needs_search(message)
+
+        if search_required:
 
             print(
-                "Searching internet:",
+                "Current information requested:",
                 message
             )
 
             web_information = search_web(message)
 
-        # Prepare Gemini conversation
+            # DO NOT USE OLD MODEL KNOWLEDGE
+            # WHEN CURRENT SEARCH FAILS.
+
+            if not web_information.strip():
+
+                return jsonify({
+
+                    "reply": (
+                        "I cannot verify the latest information "
+                        "right now because internet search is "
+                        "unavailable or returned no results. "
+                        "Please try again later."
+                    ),
+
+                    "assistant": "Florence AI",
+
+                    "provider": "Web Search"
+
+                }), 503
+
+        # PREPARE GEMINI CONVERSATION
 
         contents = prepare_history(history)
 
@@ -1007,9 +1158,17 @@ def chat():
         if web_information:
 
             current_message = (
-                "Internet search results for reference:\n\n"
-                + web_information[:10000]
-                + "\n\nCurrent question:\n"
+                "IMPORTANT: Answer using the following "
+                "internet search evidence.\n\n"
+                "Today's date: "
+                + current_date()
+                + "\n\n"
+                + web_information[:12000]
+                + "\n\n"
+                + "Use recent and reliable sources. "
+                + "Do not invent facts or dates. "
+                + "If evidence is insufficient, say so.\n\n"
+                + "USER QUESTION:\n"
                 + message
             )
 
@@ -1029,15 +1188,17 @@ def chat():
 
             try:
 
-                print(
-                    "Trying primary AI: Gemini"
-                )
+                print("Trying primary AI: Gemini")
 
                 answer = ask_gemini(contents)
 
-                print(
-                    "Gemini answered successfully"
-                )
+                if web_information:
+
+                    answer += format_sources(
+                        web_information
+                    )
+
+                print("Gemini answered successfully")
 
                 return jsonify({
 
@@ -1045,7 +1206,11 @@ def chat():
 
                     "assistant": "Florence AI",
 
-                    "provider": "Gemini"
+                    "provider": "Gemini",
+
+                    "web_search_used": bool(
+                        web_information
+                    )
 
                 })
 
@@ -1056,9 +1221,7 @@ def chat():
                     str(error)
                 )
 
-                print(
-                    "Switching to backup AI: Groq"
-                )
+                print("Switching to Groq backup")
 
         # BACKUP AI: GROQ
 
@@ -1066,9 +1229,7 @@ def chat():
 
             try:
 
-                print(
-                    "Trying backup AI: Groq"
-                )
+                print("Trying backup AI: Groq")
 
                 answer = ask_groq(
                     history,
@@ -1076,9 +1237,13 @@ def chat():
                     web_information
                 )
 
-                print(
-                    "Groq answered successfully"
-                )
+                if web_information:
+
+                    answer += format_sources(
+                        web_information
+                    )
+
+                print("Groq answered successfully")
 
                 return jsonify({
 
@@ -1086,7 +1251,11 @@ def chat():
 
                     "assistant": "Florence AI",
 
-                    "provider": "Groq"
+                    "provider": "Groq",
+
+                    "web_search_used": bool(
+                        web_information
+                    )
 
                 })
 
@@ -1102,7 +1271,9 @@ def chat():
             "reply": (
                 "Florence AI is temporarily unable to connect "
                 "to its AI providers. Please try again shortly."
-            )
+            ),
+
+            "assistant": "Florence AI"
 
         }), 503
 
@@ -1117,7 +1288,9 @@ def chat():
 
             "reply": (
                 "Something went wrong. Please try again."
-            )
+            ),
+
+            "assistant": "Florence AI"
 
         }), 500
 
@@ -1129,15 +1302,11 @@ def chat():
 if __name__ == "__main__":
 
     print("--------------------------------")
-
-    print("       FLORENCE AI")
-
-    print("  Created by M. Mehanethra")
-
-    print("  Gemini + Groq Backup")
-
-    print("  Distance Calculator Enabled")
-
+    print("          FLORENCE AI")
+    print("   Created by M. Mehanethra")
+    print("   Gemini + Groq Backup")
+    print("   Internet Search Enabled")
+    print("   Distance Calculator Enabled")
     print("--------------------------------")
 
     app.run(
