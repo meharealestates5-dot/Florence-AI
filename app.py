@@ -381,7 +381,11 @@ def ask_groq(history, message, web_information):
 def home():
 
     return render_template("index.html")
-
+@app.route("/google727dc86e6654fcd4.html")
+def google_verification():
+    return "google-site-verification: google727dc86e6654fcd4.html", 200, {
+        "Content-Type": "text/html"
+    }
 
 # --------------------------------
 # STATUS CHECK
