@@ -273,7 +273,11 @@ def ask_groq(history, message, web_information):
         timeout=60
     )
 
-    response.raise_for_status()
+if not response.ok:
+    print("Groq HTTP status:", response.status_code)
+    print("Groq error details:", response.text[:2000])
+
+response.raise_for_status()
 
     result = response.json()
 
