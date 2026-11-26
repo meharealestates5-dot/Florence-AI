@@ -5,7 +5,12 @@ import requests
 from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
-
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "online",
+        "assistant": "Uniteaa AI"
+    })
 # -----------------------------
 # UNITEAA AI CONFIGURATION
 # -----------------------------
