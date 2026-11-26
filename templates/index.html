@@ -207,7 +207,7 @@ header {
 
 <main class="main">
 
-    <header>✦ Florence AI</header>
+    <header>✦ Uniteaa AI</header>
 
     <section id="chat">
 
@@ -297,8 +297,6 @@ async function sendMessage() {
 
         });
 
-        // Read response safely before parsing JSON
-
         const responseText = await response.text();
 
         let data;
@@ -313,7 +311,7 @@ async function sendMessage() {
             );
 
             throw new Error(
-                "Server returned HTML instead of JSON. HTTP status: "
+                "Server returned an invalid response. HTTP status: "
                 + response.status
             );
         }
@@ -337,14 +335,10 @@ async function sendMessage() {
 
     } catch (error) {
 
-        console.error("Florence AI error:", error);
+        console.error("Uniteaa AI error:", error);
 
-        loading.remove();
-
-        addMessage(
-            "Connection error: " + error.message,
-            "bot"
-        );
+        loading.textContent =
+            "Connection error: " + error.message;
 
     } finally {
 
