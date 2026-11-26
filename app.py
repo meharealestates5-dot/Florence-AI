@@ -4,13 +4,12 @@ import re
 import requests
 from flask import Flask, render_template, request, jsonify
 
+# -----------------------------
+# FLASK APPLICATION
+# -----------------------------
+
 app = Flask(__name__)
-@app.route("/health")
-def health():
-    return jsonify({
-        "status": "online",
-        "assistant": "Uniteaa AI"
-    })
+
 # -----------------------------
 # UNITEAA AI CONFIGURATION
 # -----------------------------
@@ -111,7 +110,7 @@ def get_coordinates(place):
     url = "https://nominatim.openstreetmap.org/search"
 
     headers = {
-        "User-Agent": "UniteaaAI/1.0 contact: uniteaa@example.com"
+        "User-Agent": "UniteaaAI/1.0"
     }
 
     params = {
@@ -147,17 +146,13 @@ def calculate_distance(place1, place2):
         return None
 
     url = (
-        f"https://router.project-osrm.org/route/v1/driving/"
+        "https://router.project-osrm.org/route/v1/driving/"
         f"{start[0]},{start[1]};{end[0]},{end[1]}"
     )
 
-    params = {
-        "overview": "false"
-    }
-
     response = requests.get(
         url,
-        params=params,
+        params={"overview": "false"},
         timeout=20
     )
 
@@ -182,12 +177,8 @@ def distance_answer(message):
         match = re.search(pattern, message, re.IGNORECASE)
 
         if match:
-            if index == 0:
-                place1 = match.group(1).strip(" ?.,")
-                place2 = match.group(2).strip(" ?.,")
-            else:
-                place1 = match.group(1).strip(" ?.,")
-                place2 = match.group(2).strip(" ?.,")
+            place1 = match.group(1).strip(" ?.,")
+            place2 = match.group(2).strip(" ?.,")
 
             try:
                 distance = calculate_distance(place1, place2)
@@ -208,6 +199,7 @@ def distance_answer(message):
                     "The distance service is temporarily unavailable. "
                     "Please try again later."
                 )
+
             except (ValueError, KeyError, TypeError):
                 return "Sorry, I couldn't calculate that distance."
 
@@ -231,7 +223,9 @@ def ask_gemini(message, history):
         if not content:
             continue
 
-        gemini_role = "model" if role == "assistant" else "user"
+        gemini_role = (
+            "model" if role == "assistant" else "user"
+        )
 
         contents.append({
             "role": gemini_role,
@@ -263,9 +257,9 @@ def ask_gemini(message, history):
 
     if not response.ok:
         try:
-            error_info = response.json().get("error", {}).get(
-                "message", response.text
-            )
+            error_info = response.json().get(
+                "error", {}
+            ).get("message", response.text)
         except ValueError:
             error_info = response.text
 
@@ -274,13 +268,14 @@ def ask_gemini(message, history):
         )
 
     data = response.json()
-
     candidates = data.get("candidates", [])
 
     if not candidates:
         raise Exception("Gemini returned no answer.")
 
-    parts = candidates[0].get("content", {}).get("parts", [])
+    parts = candidates[0].get(
+        "content", {}
+    ).get("parts", [])
 
     answer = "".join(
         part.get("text", "") for part in parts
@@ -300,12 +295,10 @@ def ask_groq(message, history):
     if not GROQ_API_KEY:
         raise Exception("Groq API key is not configured.")
 
-    messages = [
-        {
-            "role": "system",
-            "content": SYSTEM_PROMPT
-        }
-    ]
+    messages = [{
+        "role": "system",
+        "content": SYSTEM_PROMPT
+    }]
 
     for item in history[-10:]:
         role = item.get("role", "user")
@@ -345,9 +338,9 @@ def ask_groq(message, history):
 
     if not response.ok:
         try:
-            error_info = response.json().get("error", {}).get(
-                "message", response.text
-            )
+            error_info = response.json().get(
+                "error", {}
+            ).get("message", response.text)
         except ValueError:
             error_info = response.text
 
@@ -356,13 +349,14 @@ def ask_groq(message, history):
         )
 
     data = response.json()
-
     choices = data.get("choices", [])
 
     if not choices:
         raise Exception("Groq returned no answer.")
 
-    answer = choices[0].get("message", {}).get("content", "")
+    answer = choices[0].get(
+        "message", {}
+    ).get("content", "")
 
     if not answer:
         raise Exception("Groq returned an empty answer.")
@@ -391,6 +385,7 @@ def chat():
         history = []
 
     # Creator information
+
     special_answer = creator_answer(message)
 
     if special_answer:
@@ -401,6 +396,7 @@ def chat():
         })
 
     # Distance calculator
+
     distance_result = distance_answer(message)
 
     if distance_result:
@@ -410,7 +406,8 @@ def chat():
             "provider": "Distance Calculator"
         })
 
-    # Try Gemini first
+    # Gemini primary AI
+
     gemini_error = None
 
     if GEMINI_API_KEY:
@@ -425,12 +422,15 @@ def chat():
 
         except Exception as error:
             gemini_error = str(error)
-            app.logger.error("Gemini failed: %s", gemini_error)
+            app.logger.error(
+                "Gemini failed: %s", gemini_error
+            )
 
     else:
         gemini_error = "Gemini API key is not configured."
 
-    # Automatically try Groq if Gemini fails
+    # Groq backup AI
+
     if GROQ_API_KEY:
         try:
             answer = ask_groq(message, history)
@@ -443,7 +443,9 @@ def chat():
             })
 
         except Exception as groq_error:
-            app.logger.error("Groq failed: %s", str(groq_error))
+            app.logger.error(
+                "Groq failed: %s", str(groq_error)
+            )
 
             return jsonify({
                 "reply": (
@@ -498,10 +500,12 @@ def health():
 
 @app.route("/sitemap.xml")
 def sitemap():
-    return """<?xml version="1.0" encoding="UTF-8"?>
+    base_url = request.url_root.rstrip("/")
+
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-        <loc>https://florence-ai.onrender.com/</loc>
+        <loc>{base_url}/</loc>
     </url>
 </urlset>
 """, 200, {"Content-Type": "application/xml"}
@@ -513,10 +517,12 @@ def sitemap():
 
 @app.route("/robots.txt")
 def robots():
-    return """User-agent: *
+    base_url = request.url_root.rstrip("/")
+
+    return f"""User-agent: *
 Allow: /
 
-Sitemap: https://florence-ai.onrender.com/sitemap.xml
+Sitemap: {base_url}/sitemap.xml
 """, 200, {"Content-Type": "text/plain"}
 
 
