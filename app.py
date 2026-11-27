@@ -7,21 +7,28 @@ import base64
 import logging
 import requests
 
+from datetime import datetime
+
 from flask import Flask, render_template, request, jsonify, send_file
 from werkzeug.utils import secure_filename
+
 from pypdf import PdfReader
 from docx import Document
+
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.units import mm
+
 from ddgs import DDGS
+
 
 # =====================================================
 # UNITEAA AI - CONFIGURATION
 # =====================================================
 
 app = Flask(__name__)
+
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 app.config["JSON_SORT_KEYS"] = False
 
@@ -37,24 +44,27 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 
 GEMINI_MODEL = os.getenv(
-    "GEMINI_MODEL", "gemini-2.5-flash"
+    "GEMINI_MODEL",
+    "gemini-2.5-flash"
 )
 
 GROQ_MODEL = os.getenv(
-    "GROQ_MODEL", "openai/gpt-oss-120b"
+    "GROQ_MODEL",
+    "openai/gpt-oss-120b"
 )
 
 GEMINI_IMAGE_MODEL = os.getenv(
-    "GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image"
+    "GEMINI_IMAGE_MODEL",
+    "gemini-2.5-flash-image"
 )
 
 GEMINI_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/"
+    "https://generativelanguage.googleapis.com/v1beta/"
     f"models/{GEMINI_MODEL}:generateContent"
 )
 
 IMAGE_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/"
+    "https://generativelanguage.googleapis.com/v1beta/"
     f"models/{GEMINI_IMAGE_MODEL}:generateContent"
 )
 
@@ -67,7 +77,10 @@ ALLOWED_EXTENSIONS = {
     "png", "jpg", "jpeg", "webp"
 }
 
-IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+IMAGE_EXTENSIONS = {
+    "png", "jpg", "jpeg", "webp"
+}
+
 
 # =====================================================
 # SYSTEM PROMPT
@@ -106,6 +119,7 @@ IMPORTANT ANSWERING RULES:
 10. Be concise when the user requests short answers.
 """
 
+
 # =====================================================
 # CREATOR INFORMATION
 # =====================================================
@@ -115,20 +129,30 @@ def creator_answer(message):
     q = re.sub(r"\s+", " ", message.lower()).strip()
 
     if any(x in q for x in (
-        "father name", "creator's father",
-        "your creator's father", "who is her father"
+        "father name",
+        "creator's father",
+        "your creator's father",
+        "who is her father"
     )):
-        return f"My creator's father's name is {FATHER_NAME}."
+        return (
+            f"My creator's father's name is {FATHER_NAME}."
+        )
 
     if any(x in q for x in (
-        "mother name", "creator's mother",
-        "your creator's mother", "who is her mother"
+        "mother name",
+        "creator's mother",
+        "your creator's mother",
+        "who is her mother"
     )):
-        return f"My creator's mother's name is {MOTHER_NAME}."
+        return (
+            f"My creator's mother's name is {MOTHER_NAME}."
+        )
 
     if any(x in q for x in (
-        "creator's parents", "your creator's parents",
-        "parents name", "parents' names"
+        "creator's parents",
+        "your creator's parents",
+        "parents name",
+        "parents' names"
     )):
         return (
             f"My creator's father is {FATHER_NAME}, "
@@ -141,7 +165,9 @@ def creator_answer(message):
         "where is your creator from",
         "her native place"
     )):
-        return f"My creator's native place is {NATIVE_PLACE}."
+        return (
+            f"My creator's native place is {NATIVE_PLACE}."
+        )
 
     if any(x in q for x in (
         "who created you",
@@ -193,19 +219,24 @@ def extract_file_text(upload):
     if extension == "txt":
 
         return raw.decode(
-            "utf-8-sig", errors="replace"
+            "utf-8-sig",
+            errors="replace"
         ), None
 
     if extension == "csv":
 
         decoded = raw.decode(
-            "utf-8-sig", errors="replace"
+            "utf-8-sig",
+            errors="replace"
         )
 
-        rows = list(csv.reader(io.StringIO(decoded)))
+        rows = list(
+            csv.reader(io.StringIO(decoded))
+        )
 
         return "\n".join(
-            " | ".join(row) for row in rows[:1000]
+            " | ".join(row)
+            for row in rows[:1000]
         ), None
 
     if extension == "pdf":
@@ -257,20 +288,42 @@ def extract_file_text(upload):
 # =====================================================
 # LIVE WEB SEARCH
 # =====================================================
+
 LIVE_TERMS = (
-    "latest", "current", "currently", "today", "tonight",
-    "right now", "live", "breaking", "recent", "this week",
-    "this month", "this year", "news", "weather", "score",
-    "election result", "price today", "gold rate", "gold price",
-    "silver rate", "silver price", "22k gold", "24k gold",
-    "who is the cm", "who is cm", "current cm",
-    "cm of tamil nadu", "chief minister now",
-    "prime minister now", "president now",
-    "new update", "latest update", "2026", "2027", "2028"
+    "latest",
+    "current",
+    "currently",
+    "today",
+    "tonight",
+    "right now",
+    "live",
+    "breaking",
+    "recent",
+    "this week",
+    "this month",
+    "this year",
+    "news",
+    "weather",
+    "score",
+    "election result",
+    "price today",
+    "gold rate",
+    "gold price",
+    "silver rate",
+    "silver price",
+    "22k gold",
+    "24k gold",
+    "current cm",
+    "chief minister",
+    "prime minister",
+    "president now",
+    "new update",
+    "latest update"
 )
 
 
 def is_live_question(message):
+
     q = message.lower().strip()
 
     if any(term in q for term in LIVE_TERMS):
@@ -289,162 +342,201 @@ def is_live_question(message):
         r"\bgold price\b",
     )
 
-    return any(re.search(pattern, q) for pattern in patterns)
-
-
-def get_search_queries(message):
-    q = message.lower().strip()
-
-    # Indian gold and silver rates
-    if any(term in q for term in (
-        "gold rate", "gold price", "22k gold",
-        "24k gold", "silver rate", "silver price"
-    )):
-        return [
-            "Today gold rate in Chennai Tamil Nadu India "
-            "22 carat 24 carat price per gram INR",
-            "India gold price today 22K 24K rupees per gram",
-            "Chennai gold rate today reliable Indian source"
-        ]
-
-    # Tamil Nadu Chief Minister
-    if (
-        ("chief minister" in q or "cm" in q)
-        and ("tamil nadu" in q or "tn" in q or "who is" in q)
-    ):
-        return [
-            "Who is the current Chief Minister of Tamil Nadu "
-            "2026 official government",
-            "Tamil Nadu Chief Minister latest news November 2026"
-        ]
-
-    # General India-focused search
-    return [
-        message + " India latest information",
-        message + " official latest update"
-    ]
-
-
-def search_web(query):
-    try:
-        queries = get_search_queries(query)
-        collected = []
-        seen_urls = set()
-
-        with DDGS() as client:
-            for search_query in queries:
-                try:
-                    try:
-                        results = client.text(
-                            search_query,
-                            region="in-en",
-                            safesearch="moderate",
-                            max_results=8
-                        )
-                    except TypeError:
-                        # Compatibility with older DDGS versions
-                        results = client.text(
-                            search_query,
-                            max_results=8
-                        )
-
-                    for item in results or []:
-                        title = str(item.get("title", "Untitled"))
-                        body = str(item.get("body", ""))
-                        url = str(item.get("href", ""))
-
-                        if not url.startswith(("https://", "http://")):
-                            continue
-
-                        if url in seen_urls:
-                            continue
-
-                        # Avoid Pakistani gold-rate pages when
-                        # the user asks for Indian gold prices.
-                        is_gold_query = any(term in query.lower() for term in (
-                            "gold", "silver", "22k", "24k"
-                        ))
-
-                        combined = (title + " " + body + " " + url).lower()
-
-                        if is_gold_query and any(term in combined for term in (
-                            "pakistan", "pakistani rupee", "pkr",
-                            "karachi gold", "lahore gold"
-                        )):
-                            continue
-
-                        seen_urls.add(url)
-                        collected.append({
-                            "title": title[:300],
-                            "body": body[:1500],
-                            "url": url[:1000]
-                        })
-
-                except Exception:
-                    app.logger.exception(
-                        "One live search query failed: %s",
-                        search_query
-                    )
-
-        output = []
-
-        for item in collected[:12]:
-            output.append(
-                f"Title: {item['title']}\n"
-                f"Information: {item['body']}\n"
-                f"Source URL: {item['url']}"
-            )
-
-        return "\n\n".join(output)
-
-    except Exception:
-        app.logger.exception("Live web search failed")
-        return ""
-   return any(
+    return any(
         re.search(pattern, q)
         for pattern in patterns
     )
 
 
+def get_search_queries(message):
+
+    q = message.lower().strip()
+    year = datetime.now().year
+
+    # Gold and silver prices in India
+    if any(term in q for term in (
+        "gold rate",
+        "gold price",
+        "22k gold",
+        "24k gold",
+        "silver rate",
+        "silver price"
+    )):
+        return [
+            "Today gold rate Chennai India "
+            "22 carat 24 carat INR per gram",
+
+            "India gold price today "
+            "rupees per gram reliable source",
+
+            "Today silver rate Chennai India INR"
+        ]
+
+    # Tamil Nadu Chief Minister
+    if (
+        (
+            "chief minister" in q
+            or re.search(r"\bcm\b", q)
+        )
+        and (
+            "tamil nadu" in q
+            or "tn" in q
+            or "who is" in q
+        )
+    ):
+        return [
+            f"Current Chief Minister of Tamil Nadu {year}",
+
+            f"Tamil Nadu Chief Minister "
+            f"official government {year}",
+
+            f"Tamil Nadu Chief Minister "
+            f"latest news {year}"
+        ]
+
+    # General current-information search
+    return [
+        f"{message} latest information {year}",
+        f"{message} official source",
+        f"{message} latest news today"
+    ]
+
+
 def search_web(query):
 
     try:
 
+        queries = get_search_queries(query)
+
+        collected = []
+        seen_urls = set()
+
         with DDGS() as client:
 
-            results = list(
-                client.text(
-                    query,
-                    max_results=6
-                )
+            for search_query in queries:
+
+                try:
+
+                    results = client.text(
+                        search_query,
+                        region="in-en",
+                        safesearch="moderate",
+                        max_results=8
+                    )
+
+                    for item in results or []:
+
+                        title = str(
+                            item.get("title", "Untitled")
+                        ).strip()
+
+                        body = str(
+                            item.get("body", "")
+                        ).strip()
+
+                        url = str(
+                            item.get("href", "")
+                        ).strip()
+
+                        if not url.startswith(
+                            ("https://", "http://")
+                        ):
+                            continue
+
+                        if url in seen_urls:
+                            continue
+
+                        if not title and not body:
+                            continue
+
+                        combined = (
+                            title + " " + body + " " + url
+                        ).lower()
+
+                        # Avoid unrelated Pakistani price results
+                        is_price_query = any(
+                            term in query.lower()
+                            for term in (
+                                "gold",
+                                "silver",
+                                "22k",
+                                "24k"
+                            )
+                        )
+
+                        if (
+                            is_price_query
+                            and any(term in combined for term in (
+                                "pakistan",
+                                "pakistani rupee",
+                                "karachi gold",
+                                "lahore gold",
+                                "pkr"
+                            ))
+                        ):
+                            continue
+
+                        # Identify likely official sources
+                        official = any(
+                            domain in url.lower()
+                            for domain in (
+                                ".gov.in",
+                                "pib.gov.in",
+                                "tn.gov.in",
+                                "pmindia.gov.in",
+                                "eci.gov.in"
+                            )
+                        )
+
+                        seen_urls.add(url)
+
+                        collected.append({
+                            "title": title[:300],
+                            "body": body[:1500],
+                            "url": url[:1000],
+                            "official": official
+                        })
+
+                except Exception as exc:
+
+                    app.logger.warning(
+                        "Search query failed: %s | %s",
+                        search_query,
+                        str(exc)
+                    )
+
+        # Put likely official sources first
+        collected.sort(
+            key=lambda item: item["official"],
+            reverse=True
+        )
+
+        output = []
+
+        for index, item in enumerate(
+            collected[:12],
+            start=1
+        ):
+
+            output.append(
+                f"SOURCE {index}\n"
+                f"Title: {item['title']}\n"
+                f"Information: {item['body']}\n"
+                f"Official government source: "
+                f"{'Yes' if item['official'] else 'Not verified'}\n"
+                f"Source URL: {item['url']}"
             )
 
-        cleaned = []
+        result = "\n\n".join(output)
 
-        for item in results:
+        if not result:
 
-            title = str(
-                item.get("title", "Untitled")
-            )[:300]
-
-            body = str(
-                item.get("body", "")
-            )[:1500]
-
-            url = str(
-                item.get("href", "")
-            )[:1000]
-
-            if not url.startswith(("https://", "http://")):
-                continue
-
-            cleaned.append(
-                f"Title: {title}\n"
-                f"Information: {body}\n"
-                f"Source URL: {url}"
+            app.logger.warning(
+                "Live search returned no usable results: %s",
+                query
             )
 
-        return "\n\n".join(cleaned)
+        return result
 
     except Exception:
 
@@ -479,9 +571,16 @@ def build_prompt(
         prompt += (
             "\n\nLIVE WEB SEARCH RESULTS:\n"
             + web_context
-            + "\n\nUse these results to answer "
-              "current-information questions. "
-              "Include relevant source URLs."
+            + "\n\nCURRENT INFORMATION RULES:\n"
+            "1. Answer using the supplied search results.\n"
+            "2. Prefer official government sources.\n"
+            "3. Do not use old training knowledge to override "
+            "newer search results.\n"
+            "4. If sources conflict, explain the conflict.\n"
+            "5. Include relevant source URLs in your answer.\n"
+            "6. Never invent publication dates or source links.\n"
+            "7. If results do not establish the answer, "
+            "say that it could not be verified.\n"
         )
 
     elif is_live_question(message):
@@ -490,9 +589,9 @@ def build_prompt(
             "\n\nIMPORTANT: This is a current-information "
             "question, but live search returned no usable "
             "results. Do not present outdated information "
-            "as verified current information. "
-            "Clearly disclose that current verification "
-            "was unsuccessful."
+            "as verified current information. Clearly "
+            "disclose that current verification was "
+            "unsuccessful.\n"
         )
 
     prompt += (
@@ -576,9 +675,9 @@ def ask_gemini(
     ).get("parts", [])
 
     answer = "\n".join(
-        p.get("text", "")
-        for p in answer_parts
-        if p.get("text")
+        part.get("text", "")
+        for part in answer_parts
+        if part.get("text")
     ).strip()
 
     if not answer:
@@ -684,7 +783,7 @@ def generate_answer(
 
     errors = []
 
-    # First try Gemini
+    # Gemini primary provider
     try:
 
         answer = ask_gemini(
@@ -699,12 +798,13 @@ def generate_answer(
     except Exception as exc:
 
         app.logger.warning(
-            "Gemini failed: %s", exc
+            "Gemini failed: %s",
+            exc
         )
 
         errors.append("Gemini failed")
 
-    # Groq fallback for text questions
+    # Groq backup for text questions
     if not image_data:
 
         try:
@@ -720,7 +820,8 @@ def generate_answer(
         except Exception as exc:
 
             app.logger.warning(
-                "Groq failed: %s", exc
+                "Groq failed: %s",
+                exc
             )
 
             errors.append("Groq failed")
@@ -800,7 +901,8 @@ def chat():
     try:
 
         message = request.form.get(
-            "message", ""
+            "message",
+            ""
         ).strip()
 
         upload = request.files.get("file")
@@ -831,7 +933,8 @@ def chat():
 
         live_enabled = (
             request.form.get(
-                "live_search", "true"
+                "live_search",
+                "true"
             ).lower() == "true"
         )
 
@@ -874,9 +977,7 @@ def chat():
         )
 
         return jsonify({
-
             "error": str(exc)
-
         }), 500
 
 
@@ -946,14 +1047,18 @@ def generate_image():
         if not response.ok:
 
             try:
+
                 error_data = response.json()
+
                 provider_error = error_data.get(
                     "error", {}
                 ).get(
                     "message",
                     response.text[:1000]
                 )
+
             except Exception:
+
                 provider_error = response.text[:1000]
 
             app.logger.error(
@@ -973,7 +1078,8 @@ def generate_image():
         result = response.json()
 
         candidates = result.get(
-            "candidates", []
+            "candidates",
+            []
         )
 
         if not candidates:
@@ -1168,7 +1274,8 @@ def export_answer(file_format):
             document = Document()
 
             document.add_heading(
-                "Uniteaa AI", 0
+                "Uniteaa AI",
+                0
             )
 
             for paragraph in answer.split("\n"):
