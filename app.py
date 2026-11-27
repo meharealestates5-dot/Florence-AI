@@ -257,48 +257,25 @@ def extract_file_text(upload):
 # =====================================================
 # LIVE WEB SEARCH
 # =====================================================
-
 LIVE_TERMS = (
-    "latest",
-    "current",
-    "currently",
-    "today",
-    "tonight",
-    "right now",
-    "live",
-    "breaking",
-    "recent",
-    "this week",
-    "this month",
-    "this year",
-    "news",
-    "weather",
-    "score",
-    "election result",
-    "price today",
-    "who is the cm",
-    "who is cm",
-    "current cm",
-    "cm of tamil nadu",
-    "chief minister now",
-    "prime minister now",
-    "president now",
-    "new update",
-    "latest update",
-    "2026",
-    "2027",
-    "2028"
+    "latest", "current", "currently", "today", "tonight",
+    "right now", "live", "breaking", "recent", "this week",
+    "this month", "this year", "news", "weather", "score",
+    "election result", "price today", "gold rate", "gold price",
+    "silver rate", "silver price", "22k gold", "24k gold",
+    "who is the cm", "who is cm", "current cm",
+    "cm of tamil nadu", "chief minister now",
+    "prime minister now", "president now",
+    "new update", "latest update", "2026", "2027", "2028"
 )
 
 
 def is_live_question(message):
-
     q = message.lower().strip()
 
     if any(term in q for term in LIVE_TERMS):
         return True
 
-    # Additional current-information patterns
     patterns = (
         r"\bwho is (the )?(current|present)\b",
         r"\bwho is .* (now|today)\b",
@@ -306,10 +283,124 @@ def is_live_question(message):
         r"\bhow much does .* cost\b",
         r"\bwhen is the next\b",
         r"\bcurrent .* price\b",
-        r"\bcurrent .* status\b"
+        r"\bcurrent .* status\b",
+        r"\b(rate|price) of gold\b",
+        r"\bgold rate\b",
+        r"\bgold price\b",
     )
 
-    return any(
+    return any(re.search(pattern, q) for pattern in patterns)
+
+
+def get_search_queries(message):
+    q = message.lower().strip()
+
+    # Indian gold and silver rates
+    if any(term in q for term in (
+        "gold rate", "gold price", "22k gold",
+        "24k gold", "silver rate", "silver price"
+    )):
+        return [
+            "Today gold rate in Chennai Tamil Nadu India "
+            "22 carat 24 carat price per gram INR",
+            "India gold price today 22K 24K rupees per gram",
+            "Chennai gold rate today reliable Indian source"
+        ]
+
+    # Tamil Nadu Chief Minister
+    if (
+        ("chief minister" in q or "cm" in q)
+        and ("tamil nadu" in q or "tn" in q or "who is" in q)
+    ):
+        return [
+            "Who is the current Chief Minister of Tamil Nadu "
+            "2026 official government",
+            "Tamil Nadu Chief Minister latest news November 2026"
+        ]
+
+    # General India-focused search
+    return [
+        message + " India latest information",
+        message + " official latest update"
+    ]
+
+
+def search_web(query):
+    try:
+        queries = get_search_queries(query)
+        collected = []
+        seen_urls = set()
+
+        with DDGS() as client:
+            for search_query in queries:
+                try:
+                    try:
+                        results = client.text(
+                            search_query,
+                            region="in-en",
+                            safesearch="moderate",
+                            max_results=8
+                        )
+                    except TypeError:
+                        # Compatibility with older DDGS versions
+                        results = client.text(
+                            search_query,
+                            max_results=8
+                        )
+
+                    for item in results or []:
+                        title = str(item.get("title", "Untitled"))
+                        body = str(item.get("body", ""))
+                        url = str(item.get("href", ""))
+
+                        if not url.startswith(("https://", "http://")):
+                            continue
+
+                        if url in seen_urls:
+                            continue
+
+                        # Avoid Pakistani gold-rate pages when
+                        # the user asks for Indian gold prices.
+                        is_gold_query = any(term in query.lower() for term in (
+                            "gold", "silver", "22k", "24k"
+                        ))
+
+                        combined = (title + " " + body + " " + url).lower()
+
+                        if is_gold_query and any(term in combined for term in (
+                            "pakistan", "pakistani rupee", "pkr",
+                            "karachi gold", "lahore gold"
+                        )):
+                            continue
+
+                        seen_urls.add(url)
+                        collected.append({
+                            "title": title[:300],
+                            "body": body[:1500],
+                            "url": url[:1000]
+                        })
+
+                except Exception:
+                    app.logger.exception(
+                        "One live search query failed: %s",
+                        search_query
+                    )
+
+        output = []
+
+        for item in collected[:12]:
+            output.append(
+                f"Title: {item['title']}\n"
+                f"Information: {item['body']}\n"
+                f"Source URL: {item['url']}"
+            )
+
+        return "\n\n".join(output)
+
+    except Exception:
+        app.logger.exception("Live web search failed")
+        return ""
+   return any(
         re.search(pattern, q)
         for pattern in patterns
     )
