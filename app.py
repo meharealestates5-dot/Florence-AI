@@ -1,330 +1,214 @@
 
 import os
+import io
 import re
+import json
+import math
 import requests
-from flask import Flask, render_template, request, jsonify
 
-# -----------------------------
-# FLASK APPLICATION
-# -----------------------------
+from datetime import datetime
+from flask import (
+    Flask, render_template, request, jsonify,
+    send_file, Response
+)
+from werkzeug.utils import secure_filename
+
+from pypdf import PdfReader
+from docx import Document
+from reportlab.pdfgen import canvas
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB
 
-# -----------------------------
-# UNITEAA AI CONFIGURATION
-# -----------------------------
+# ---------------- CONFIGURATION ----------------
 
 ASSISTANT_NAME = "Uniteaa AI"
 CREATOR_NAME = "M. Mehanethra"
-
 FATHER_NAME = "K. Manoharan"
 MOTHER_NAME = "K. Marakatham"
+NATIVE_PLACE = "Thanjavur, Tamil Nadu"
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
-GEMINI_MODEL = os.environ.get(
-    "GEMINI_MODEL", "gemini-2.5-flash"
-).strip()
-
-GROQ_MODEL = os.environ.get(
-    "GROQ_MODEL", "openai/gpt-oss-120b"
-).strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 GEMINI_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/"
-    f"models/{GEMINI_MODEL}:generateContent"
+    f"https://generativelanguage.googleapis.com/v1beta/models/"
+    f"{GEMINI_MODEL}:generateContent"
 )
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
+ALLOWED_EXTENSIONS = {
+    "pdf", "docx", "txt", "csv", "png", "jpg", "jpeg", "webp"
+}
+
 SYSTEM_PROMPT = f"""
-You are {ASSISTANT_NAME}, a helpful, friendly and intelligent AI assistant.
+You are {ASSISTANT_NAME}, a helpful AI assistant.
 
 Your creator is {CREATOR_NAME}.
+The creator's native place is {NATIVE_PLACE}.
+The creator's father's name is {FATHER_NAME}.
+The creator's mother's name is {MOTHER_NAME}.
 
-If someone asks who created you, answer:
-"I was created by {CREATOR_NAME}."
+If asked who created you, say you were created by {CREATOR_NAME}.
+If asked to tell about your creator, you may share the creator's
+name, native place, and parents' names.
+If asked where your creator is from, say {NATIVE_PLACE}.
+If asked about the creator's parents, provide the names above.
 
-If someone asks for your creator's parents' names, answer:
-"My creator's father's name is {FATHER_NAME}, and her mother's name is {MOTHER_NAME}."
+Never reveal the creator's school name or current living location.
+Do not guess or invent personal information.
 
-Do not reveal any other personal information about the creator.
-
-Answer questions clearly, accurately and in simple language.
-If you are unsure about an answer, say so instead of inventing information.
-Do not claim to have performed live web searches.
+Answer clearly, accurately, and naturally.
+If you do not know something, say so.
+Do not claim to have searched the live web.
 """
 
-# -----------------------------
-# HOME PAGE
-# -----------------------------
-
-@app.route("/")
-def home():
-    return render_template("index.html")
-
-
-# -----------------------------
-# CREATOR INFORMATION
-# -----------------------------
+# ---------------- CREATOR QUESTIONS ----------------
 
 def creator_answer(message):
-    text = message.lower()
+    q = message.lower().strip()
 
-    creator_questions = [
-        "who created you",
-        "who is your creator",
-        "who made you",
-        "who developed you",
-        "who is the founder",
-        "who is your developer"
+    creator_patterns = [
+        "who created you", "who is your creator",
+        "who made you", "who developed you",
+        "who is the founder", "who is your developer",
+        "tell me about your creator", "about your creator",
+        "tell me about her", "who is she"
     ]
 
-    parent_questions = [
-        "parents name",
-        "parent names",
-        "father and mother",
-        "who are your creator parents",
-        "creator's parents",
-        "creators parents"
+    parent_patterns = [
+        "creator's parents", "your creator parents",
+        "who are her parents", "who is her father",
+        "who is her mother", "creator father",
+        "creator mother", "parents name"
     ]
 
-    if any(q in text for q in parent_questions):
+    father_patterns = ["father name", "her father", "creator's father"]
+    mother_patterns = ["mother name", "her mother", "creator's mother"]
+    place_patterns = [
+        "where is your creator from", "creator native place",
+        "where is she from", "her native place"
+    ]
+
+    if any(x in q for x in father_patterns):
+        return f"My creator's father's name is {FATHER_NAME}."
+
+    if any(x in q for x in mother_patterns):
+        return f"My creator's mother's name is {MOTHER_NAME}."
+
+    if any(x in q for x in parent_patterns):
         return (
-            f"My creator's father's name is {FATHER_NAME}, "
+            f"My creator's father is {FATHER_NAME}, "
+            f"and her mother is {MOTHER_NAME}."
+        )
+
+    if any(x in q for x in place_patterns):
+        return f"My creator's native place is {NATIVE_PLACE}."
+
+    if any(x in q for x in creator_patterns):
+        return (
+            f"I was created by {CREATOR_NAME}. "
+            f"Her native place is {NATIVE_PLACE}. "
+            f"Her father's name is {FATHER_NAME}, "
             f"and her mother's name is {MOTHER_NAME}."
         )
 
-    if any(q in text for q in creator_questions):
-        return f"I was created by {CREATOR_NAME}."
-
     return None
 
 
-# -----------------------------
-# DISTANCE CALCULATOR
-# -----------------------------
+# ---------------- FILE READING ----------------
 
-def get_coordinates(place):
-    url = "https://nominatim.openstreetmap.org/search"
-
-    headers = {
-        "User-Agent": "UniteaaAI/1.0"
-    }
-
-    params = {
-        "q": place,
-        "format": "json",
-        "limit": 1
-    }
-
-    response = requests.get(
-        url,
-        params=params,
-        headers=headers,
-        timeout=15
-    )
-
-    response.raise_for_status()
-    results = response.json()
-
-    if not results:
-        return None
-
+def allowed_file(filename):
     return (
-        float(results[0]["lon"]),
-        float(results[0]["lat"])
+        "." in filename and
+        filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
     )
 
 
-def calculate_distance(place1, place2):
-    start = get_coordinates(place1)
-    end = get_coordinates(place2)
+def extract_file_text(file):
+    filename = secure_filename(file.filename)
+    extension = filename.rsplit(".", 1)[1].lower()
+    raw = file.read()
+    file.seek(0)
 
-    if not start or not end:
-        return None
+    if extension == "txt":
+        return raw.decode("utf-8", errors="replace"), None
 
-    url = (
-        "https://router.project-osrm.org/route/v1/driving/"
-        f"{start[0]},{start[1]};{end[0]},{end[1]}"
-    )
+    if extension == "csv":
+        return raw.decode("utf-8", errors="replace"), None
 
-    response = requests.get(
-        url,
-        params={"overview": "false"},
-        timeout=20
-    )
-
-    response.raise_for_status()
-    data = response.json()
-
-    if data.get("code") != "Ok" or not data.get("routes"):
-        return None
-
-    distance_km = data["routes"][0]["distance"] / 1000
-
-    return round(distance_km, 2)
-
-
-def distance_answer(message):
-    patterns = [
-        r"distance\s+between\s+(.+?)\s+and\s+(.+)",
-        r"how\s+far\s+is\s+(.+?)\s+from\s+(.+)"
-    ]
-
-    for index, pattern in enumerate(patterns):
-        match = re.search(pattern, message, re.IGNORECASE)
-
-        if match:
-            place1 = match.group(1).strip(" ?.,")
-            place2 = match.group(2).strip(" ?.,")
-
-            try:
-                distance = calculate_distance(place1, place2)
-
-                if distance is None:
-                    return (
-                        "Sorry, I couldn't find the route. "
-                        "Please check the place names and try again."
-                    )
-
-                return (
-                    f"The approximate driving distance between "
-                    f"{place1} and {place2} is {distance} km."
-                )
-
-            except requests.RequestException:
-                return (
-                    "The distance service is temporarily unavailable. "
-                    "Please try again later."
-                )
-
-            except (ValueError, KeyError, TypeError):
-                return "Sorry, I couldn't calculate that distance."
-
-    return None
-
-
-# -----------------------------
-# GEMINI AI
-# -----------------------------
-
-def ask_gemini(message, history):
-    if not GEMINI_API_KEY:
-        raise Exception("Gemini API key is not configured.")
-
-    contents = []
-
-    for item in history[-10:]:
-        role = item.get("role", "user")
-        content = item.get("content", "")
-
-        if not content:
-            continue
-
-        gemini_role = (
-            "model" if role == "assistant" else "user"
+    if extension == "pdf":
+        reader = PdfReader(io.BytesIO(raw))
+        text_content = "\n".join(
+            page.extract_text() or "" for page in reader.pages
         )
+        return text_content, None
 
-        contents.append({
-            "role": gemini_role,
-            "parts": [{"text": str(content)}]
-        })
+    if extension == "docx":
+        doc = Document(io.BytesIO(raw))
+        text_content = "\n".join(p.text for p in doc.paragraphs)
+        return text_content, None
 
-    contents.append({
-        "role": "user",
-        "parts": [{"text": message}]
-    })
-
-    payload = {
-        "systemInstruction": {
-            "parts": [{"text": SYSTEM_PROMPT}]
-        },
-        "contents": contents,
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 2048
+    if extension in {"png", "jpg", "jpeg", "webp"}:
+        mime = {
+            "png": "image/png",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "webp": "image/webp"
+        }[extension]
+        import base64
+        return None, {
+            "mime_type": mime,
+            "data": base64.b64encode(raw).decode("utf-8")
         }
-    }
+
+    raise ValueError("Unsupported file format.")
+
+
+# ---------------- GEMINI AI ----------------
+
+def ask_gemini(message, image_data=None):
+    if not GEMINI_API_KEY:
+        raise RuntimeError("Gemini API key is not configured.")
+
+    parts = [{"text": SYSTEM_PROMPT + "\n\nUser: " + message}]
+
+    if image_data:
+        parts.append({
+            "inline_data": {
+                "mime_type": image_data["mime_type"],
+                "data": image_data["data"]
+            }
+        })
 
     response = requests.post(
         GEMINI_URL,
         params={"key": GEMINI_API_KEY},
-        json=payload,
-        timeout=45
+        json={
+            "contents": [{"parts": parts}],
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 2048
+            }
+        },
+        timeout=60
     )
 
-    if not response.ok:
-        try:
-            error_info = response.json().get(
-                "error", {}
-            ).get("message", response.text)
-        except ValueError:
-            error_info = response.text
-
-        raise Exception(
-            f"Gemini HTTP {response.status_code}: {error_info}"
-        )
-
+    response.raise_for_status()
     data = response.json()
-    candidates = data.get("candidates", [])
 
-    if not candidates:
-        raise Exception("Gemini returned no answer.")
-
-    parts = candidates[0].get(
-        "content", {}
-    ).get("parts", [])
-
-    answer = "".join(
-        part.get("text", "") for part in parts
-    ).strip()
-
-    if not answer:
-        raise Exception("Gemini returned an empty answer.")
-
-    return answer
+    return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
-# -----------------------------
-# GROQ BACKUP AI
-# -----------------------------
+# ---------------- GROQ BACKUP ----------------
 
-def ask_groq(message, history):
+def ask_groq(message):
     if not GROQ_API_KEY:
-        raise Exception("Groq API key is not configured.")
-
-    messages = [{
-        "role": "system",
-        "content": SYSTEM_PROMPT
-    }]
-
-    for item in history[-10:]:
-        role = item.get("role", "user")
-
-        if role not in ("user", "assistant"):
-            continue
-
-        content = item.get("content", "")
-
-        if content:
-            messages.append({
-                "role": role,
-                "content": str(content)
-            })
-
-    messages.append({
-        "role": "user",
-        "content": message
-    })
-
-    payload = {
-        "model": GROQ_MODEL,
-        "messages": messages,
-        "temperature": 0.7,
-        "max_completion_tokens": 1800
-    }
+        raise RuntimeError("Groq API key is not configured.")
 
     response = requests.post(
         GROQ_URL,
@@ -332,217 +216,299 @@ def ask_groq(message, history):
             "Authorization": f"Bearer {GROQ_API_KEY}",
             "Content-Type": "application/json"
         },
-        json=payload,
-        timeout=45
+        json={
+            "model": GROQ_MODEL,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": message}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 2048
+        },
+        timeout=60
     )
 
-    if not response.ok:
-        try:
-            error_info = response.json().get(
-                "error", {}
-            ).get("message", response.text)
-        except ValueError:
-            error_info = response.text
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"]
 
-        raise Exception(
-            f"Groq HTTP {response.status_code}: {error_info}"
+
+# ---------------- AI RESPONSE ----------------
+
+def generate_answer(message, image_data=None):
+    special = creator_answer(message)
+    if special:
+        return special
+
+    errors = []
+
+    try:
+        return ask_gemini(message, image_data)
+    except Exception as e:
+        errors.append(f"Gemini: {str(e)}")
+
+    # Groq is a text backup. Image analysis requires Gemini.
+    if image_data:
+        raise RuntimeError(
+            "Image analysis is temporarily unavailable. "
+            "Please check the Gemini API key. " + " ".join(errors)
         )
 
+    try:
+        return ask_groq(message)
+    except Exception as e:
+        errors.append(f"Groq: {str(e)}")
+
+    raise RuntimeError(
+        "Both AI services are unavailable. Please check your API keys. "
+        + " | ".join(errors)
+    )
+
+
+# ---------------- DISTANCE CALCULATOR ----------------
+
+def get_coordinates(place):
+    url = "https://nominatim.openstreetmap.org/search"
+    response = requests.get(
+        url,
+        params={"q": place, "format": "json", "limit": 1},
+        headers={"User-Agent": "UniteaaAI/1.0"},
+        timeout=20
+    )
+    response.raise_for_status()
+    results = response.json()
+
+    if not results:
+        raise ValueError(f"Could not find location: {place}")
+
+    return float(results[0]["lat"]), float(results[0]["lon"])
+
+
+def calculate_distance(origin, destination):
+    lat1, lon1 = get_coordinates(origin)
+    lat2, lon2 = get_coordinates(destination)
+
+    route_url = (
+        f"https://router.project-osrm.org/route/v1/driving/"
+        f"{lon1},{lat1};{lon2},{lat2}"
+    )
+
+    response = requests.get(
+        route_url,
+        params={"overview": "false"},
+        timeout=30
+    )
+    response.raise_for_status()
     data = response.json()
-    choices = data.get("choices", [])
 
-    if not choices:
-        raise Exception("Groq returned no answer.")
+    if data.get("code") != "Ok" or not data.get("routes"):
+        raise ValueError("Unable to calculate the road distance.")
 
-    answer = choices[0].get(
-        "message", {}
-    ).get("content", "")
+    route = data["routes"][0]
+    km = route["distance"] / 1000
+    minutes = route["duration"] / 60
 
-    if not answer:
-        raise Exception("Groq returned an empty answer.")
+    return (
+        f"Driving distance from {origin} to {destination} is "
+        f"approximately {km:.1f} km. Estimated driving time: "
+        f"{minutes:.0f} minutes. Actual travel time may vary."
+    )
 
-    return answer.strip()
+
+def distance_question(message):
+    patterns = [
+        r"distance between (.+?) and (.+)",
+        r"distance from (.+?) to (.+)",
+        r"how far is (.+?) from (.+)"
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, message.lower())
+        if match:
+            if pattern.startswith("how far"):
+                destination, origin = match.groups()
+            else:
+                origin, destination = match.groups()
+
+            return origin.strip(" ?."), destination.strip(" ?.")
+
+    return None
 
 
-# -----------------------------
-# CHAT API
-# -----------------------------
+# ---------------- ROUTES ----------------
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
 
 @app.route("/chat", methods=["POST"])
 def chat():
+    try:
+        message = request.form.get("message", "").strip()
+        uploaded = request.files.get("file")
+        image_data = None
+
+        if uploaded and uploaded.filename:
+            if not allowed_file(uploaded.filename):
+                return jsonify({
+                    "error": "Unsupported file. Upload PDF, DOCX, TXT, CSV, PNG, JPG or WEBP."
+                }), 400
+
+            file_text, image_data = extract_file_text(uploaded)
+
+            if file_text is not None:
+                if len(file_text) > 60000:
+                    file_text = file_text[:60000]
+                message = (
+                    message or "Please read and explain this file."
+                ) + "\n\nUploaded file content:\n" + file_text
+
+            elif image_data:
+                message = message or "Please describe and explain this image."
+
+        if not message:
+            return jsonify({"error": "Please enter a message or upload a file."}), 400
+
+        distance = distance_question(message)
+        if distance and not uploaded:
+            try:
+                answer = calculate_distance(distance[0], distance[1])
+                return jsonify({"answer": answer})
+            except Exception:
+                pass
+
+        answer = generate_answer(message, image_data)
+        return jsonify({"answer": answer})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/download", methods=["POST"])
+def download():
     data = request.get_json(silent=True) or {}
+    answer = data.get("answer", "").strip()
 
-    message = str(data.get("message", "")).strip()
-    history = data.get("history", [])
+    if not answer:
+        return jsonify({"error": "Nothing to download."}), 400
 
-    if not message:
-        return jsonify({
-            "reply": "Please enter a message.",
-            "answer": "Please enter a message."
-        }), 400
+    content = io.BytesIO(answer.encode("utf-8"))
+    content.seek(0)
 
-    if not isinstance(history, list):
-        history = []
+    return send_file(
+        content,
+        mimetype="text/plain",
+        as_attachment=True,
+        download_name="uniteaa_ai_answer.txt"
+    )
 
-    # Creator information
 
-    special_answer = creator_answer(message)
+@app.route("/export/pdf", methods=["POST"])
+def export_pdf():
+    data = request.get_json(silent=True) or {}
+    answer = data.get("answer", "").strip()
 
-    if special_answer:
-        return jsonify({
-            "reply": special_answer,
-            "answer": special_answer,
-            "provider": "Uniteaa AI"
-        })
+    if not answer:
+        return jsonify({"error": "Nothing to export."}), 400
 
-    # Distance calculator
+    output = io.BytesIO()
+    pdf = canvas.Canvas(output)
+    text_object = pdf.beginText(50, 800)
+    text_object.setFont("Helvetica", 10)
 
-    distance_result = distance_answer(message)
+    for line in answer.splitlines():
+        while len(line) > 95:
+            text_object.textLine(line[:95])
+            line = line[95:]
+        text_object.textLine(line)
 
-    if distance_result:
-        return jsonify({
-            "reply": distance_result,
-            "answer": distance_result,
-            "provider": "Distance Calculator"
-        })
+        if text_object.getY() < 60:
+            pdf.drawText(text_object)
+            pdf.showPage()
+            text_object = pdf.beginText(50, 800)
+            text_object.setFont("Helvetica", 10)
 
-    # Gemini primary AI
+    pdf.drawText(text_object)
+    pdf.save()
+    output.seek(0)
 
-    gemini_error = None
+    return send_file(
+        output,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="uniteaa_ai_answer.pdf"
+    )
 
-    if GEMINI_API_KEY:
-        try:
-            answer = ask_gemini(message, history)
 
-            return jsonify({
-                "reply": answer,
-                "answer": answer,
-                "provider": "Gemini"
-            })
+@app.route("/export/docx", methods=["POST"])
+def export_docx():
+    data = request.get_json(silent=True) or {}
+    answer = data.get("answer", "").strip()
 
-        except Exception as error:
-            gemini_error = str(error)
-            app.logger.error(
-                "Gemini failed: %s", gemini_error
-            )
+    if not answer:
+        return jsonify({"error": "Nothing to export."}), 400
 
-    else:
-        gemini_error = "Gemini API key is not configured."
+    doc = Document()
+    doc.add_heading("Uniteaa AI Answer", 0)
 
-    # Groq backup AI
+    for line in answer.splitlines():
+        doc.add_paragraph(line)
 
-    if GROQ_API_KEY:
-        try:
-            answer = ask_groq(message, history)
+    output = io.BytesIO()
+    doc.save(output)
+    output.seek(0)
 
-            return jsonify({
-                "reply": answer,
-                "answer": answer,
-                "provider": "Groq",
-                "fallback": True
-            })
-
-        except Exception as groq_error:
-            app.logger.error(
-                "Groq failed: %s", str(groq_error)
-            )
-
-            return jsonify({
-                "reply": (
-                    "Both AI services are temporarily unavailable. "
-                    "Please try again later."
-                ),
-                "answer": (
-                    "Both AI services are temporarily unavailable. "
-                    "Please try again later."
-                ),
-                "error": "Both AI providers failed."
-            }), 503
-
-    return jsonify({
-        "reply": (
-            "The AI service is currently unavailable. "
-            "Please check the API configuration and try again."
+    return send_file(
+        output,
+        mimetype=(
+            "application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document"
         ),
-        "answer": (
-            "The AI service is currently unavailable. "
-            "Please check the API configuration and try again."
-        ),
-        "error": gemini_error
-    }), 503
+        as_attachment=True,
+        download_name="uniteaa_ai_answer.docx"
+    )
 
-
-# -----------------------------
-# HEALTH CHECK
-# -----------------------------
 
 @app.route("/health")
 def health():
     return jsonify({
+        "status": "online",
         "assistant": ASSISTANT_NAME,
         "creator": CREATOR_NAME,
-        "status": "online",
-        "gemini_configured": bool(GEMINI_API_KEY),
-        "groq_configured": bool(GROQ_API_KEY),
         "primary_model": GEMINI_MODEL,
         "backup_model": GROQ_MODEL,
+        "gemini_configured": bool(GEMINI_API_KEY),
+        "groq_configured": bool(GROQ_API_KEY),
         "distance_calculator": "enabled",
-        "distance_provider": "OpenStreetMap and OSRM",
-        "live_web_search": "disabled",
-        "voice_dictation": "disabled",
-        "file_input_output": "disabled"
+        "voice_dictation": "browser-supported",
+        "file_upload": "enabled",
+        "file_output": "TXT, PDF, DOCX",
+        "live_web_search": "disabled"
     })
 
 
-# -----------------------------
-# SITEMAP
-# -----------------------------
-
-@app.route("/sitemap.xml")
-def sitemap():
-    base_url = request.url_root.rstrip("/")
-
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-    <url>
-        <loc>{base_url}/</loc>
-    </url>
-</urlset>
-""", 200, {"Content-Type": "application/xml"}
-
-
-# -----------------------------
-# ROBOTS.TXT
-# -----------------------------
-
 @app.route("/robots.txt")
 def robots():
-    base_url = request.url_root.rstrip("/")
-
-    return f"""User-agent: *
-Allow: /
-
-Sitemap: {base_url}/sitemap.xml
-""", 200, {"Content-Type": "text/plain"}
-
-
-# -----------------------------
-# GOOGLE VERIFICATION
-# -----------------------------
-
-@app.route("/google727dc86e6654fcd4.html")
-def google_verification():
-    return (
-        "google-site-verification: google727dc86e6654fcd4.html",
-        200,
-        {"Content-Type": "text/html"}
+    return Response(
+        "User-agent: *\nAllow: /\nSitemap: /sitemap.xml\n",
+        mimetype="text/plain"
     )
 
 
-# -----------------------------
-# START APPLICATION
-# -----------------------------
+@app.route("/sitemap.xml")
+def sitemap():
+    host = request.host_url.rstrip("/")
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>{host}/</loc></url>
+</urlset>"""
+    return Response(xml, mimetype="application/xml")
+
+
+@app.errorhandler(413)
+def too_large(error):
+    return jsonify({"error": "File is too large. Maximum size is 10 MB."}), 413
+
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
