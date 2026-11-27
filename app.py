@@ -9,11 +9,9 @@ import requests
 
 from datetime import datetime
 from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from flask import (
-    Flask, render_template, request,
-    jsonify, send_file
-)
+from flask import Flask, render_template, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 
 from pypdf import PdfReader
@@ -48,13 +46,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()
 
-GEMINI_MODEL = os.getenv(
-    "GEMINI_MODEL", "gemini-2.5-flash"
-)
-
-GROQ_MODEL = os.getenv(
-    "GROQ_MODEL", "openai/gpt-oss-120b"
-)
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
@@ -70,6 +63,51 @@ ALLOWED_EXTENSIONS = {
 }
 
 IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+
+
+# =====================================================
+# INDIAN STATES AND UNION TERRITORIES
+# =====================================================
+
+INDIAN_STATES = [
+    "Andhra Pradesh",
+    "Arunachal Pradesh",
+    "Assam",
+    "Bihar",
+    "Chhattisgarh",
+    "Goa",
+    "Gujarat",
+    "Haryana",
+    "Himachal Pradesh",
+    "Jharkhand",
+    "Karnataka",
+    "Kerala",
+    "Madhya Pradesh",
+    "Maharashtra",
+    "Manipur",
+    "Meghalaya",
+    "Mizoram",
+    "Nagaland",
+    "Odisha",
+    "Punjab",
+    "Rajasthan",
+    "Sikkim",
+    "Tamil Nadu",
+    "Telangana",
+    "Tripura",
+    "Uttar Pradesh",
+    "Uttarakhand",
+    "West Bengal"
+]
+
+# Union Territories with Chief Minister-led governments.
+CM_UNION_TERRITORIES = [
+    "Delhi",
+    "Jammu and Kashmir",
+    "Puducherry"
+]
+
+ALL_CM_REGIONS = INDIAN_STATES + CM_UNION_TERRITORIES
 
 
 # =====================================================
@@ -91,12 +129,12 @@ If someone asks who created you, identify {CREATOR_NAME}.
 Never disclose or guess the creator's school or
 current living location.
 
-ANSWERING RULES:
+GENERAL ANSWERING RULES:
 
 1. Answer accurately and naturally.
 2. Never invent facts, dates or statistics.
 3. Use supplied live search results for current information.
-4. Prefer official and reliable sources.
+4. Prefer recent official government sources.
 5. Distinguish current facts from historical facts.
 6. If information cannot be verified, say so.
 7. Include source URLs when available.
@@ -108,6 +146,34 @@ ANSWERING RULES:
 11. Do not present outdated information as current.
 12. Be concise when the user requests short answers.
 13. Do not invent citations or source URLs.
+14. Never combine unrelated political events or parties.
+15. Never turn a search snippet into a confirmed fact
+    without checking its relevance and date.
+
+CHIEF MINISTER QUESTIONS:
+
+When asked for all Indian Chief Ministers:
+
+- Cover all 28 Indian states.
+- Also cover Delhi, Jammu and Kashmir, and Puducherry,
+  clearly identifying them as Union Territories.
+- Do not call Union Territories states.
+- Use the supplied search results for each region.
+- Match each name to the correct state or Union Territory.
+- Do not transfer a Chief Minister's name from one region
+  to another.
+- Do not invent missing names.
+- If a region cannot be verified, write
+  "Could not verify from available sources".
+- Do not assume a person is still Chief Minister because
+  an old article names them.
+- Pay attention to appointment dates and recent changes.
+- Do not make unrelated claims about political parties.
+- Include the date on which the information was checked.
+- Include relevant source URLs.
+
+For a single Chief Minister question, answer only about
+the requested state or Union Territory.
 """
 
 
@@ -188,17 +254,11 @@ def extract_file_text(upload):
     upload.seek(0)
 
     if extension == "txt":
-
-        return raw.decode(
-            "utf-8-sig", errors="replace"
-        ), None
+        return raw.decode("utf-8-sig", errors="replace"), None
 
     if extension == "csv":
 
-        decoded = raw.decode(
-            "utf-8-sig", errors="replace"
-        )
-
+        decoded = raw.decode("utf-8-sig", errors="replace")
         rows = list(csv.reader(io.StringIO(decoded)))
 
         return "\n".join(
@@ -221,8 +281,7 @@ def extract_file_text(upload):
         document = Document(io.BytesIO(raw))
 
         paragraphs = [
-            paragraph.text
-            for paragraph in document.paragraphs
+            paragraph.text for paragraph in document.paragraphs
         ]
 
         for table in document.tables:
@@ -264,7 +323,8 @@ LIVE_TERMS = (
     "24k gold", "chief minister", "prime minister",
     "president now", "new update", "latest update",
     "current president", "current governor",
-    "current leader", "who won"
+    "current leader", "who won", "all chief ministers",
+    "cm list", "all cms"
 )
 
 
@@ -297,46 +357,60 @@ def is_live_question(message):
     return any(re.search(pattern, q) for pattern in patterns)
 
 
+def is_all_cm_question(message):
+
+    q = message.lower()
+
+    all_terms = (
+        "all chief ministers",
+        "all the chief ministers",
+        "chief ministers of india",
+        "chief minister list",
+        "cm list",
+        "all cms",
+        "all indian cms",
+        "list of cms",
+        "list of chief ministers",
+        "chief ministers list"
+    )
+
+    asks_all = any(term in q for term in all_terms)
+
+    asks_india = (
+        "india" in q
+        or "indian" in q
+        or "states" in q
+        or "state" in q
+        or "union territories" in q
+        or "uts" in q
+    )
+
+    return asks_all and asks_india
+
+
 # =====================================================
 # SEARCH QUERY BUILDER
 # =====================================================
-
-INDIAN_STATES = [
-    "andhra pradesh",
-    "arunachal pradesh",
-    "assam",
-    "bihar",
-    "chhattisgarh",
-    "goa",
-    "gujarat",
-    "haryana",
-    "himachal pradesh",
-    "jharkhand",
-    "karnataka",
-    "kerala",
-    "madhya pradesh",
-    "maharashtra",
-    "manipur",
-    "meghalaya",
-    "mizoram",
-    "nagaland",
-    "odisha",
-    "punjab",
-    "rajasthan",
-    "sikkim",
-    "tamil nadu",
-    "telangana",
-    "tripura",
-    "uttar pradesh",
-    "uttarakhand",
-    "west bengal"
-]
-
 
 def get_search_queries(message):
 
     q = message.lower().strip()
     year = datetime.now().year
+
+    # Search every region separately for a complete list.
+
+    if is_all_cm_question(message):
+
+        queries = []
+
+        for region in ALL_CM_REGIONS:
+
+            queries.append(
+                f"Who is the current Chief Minister of "
+                f"{region} India {year} official government"
+            )
+
+        return queries
 
     is_cm_question = (
         "chief minister" in q
@@ -346,23 +420,34 @@ def get_search_queries(message):
     if is_cm_question:
 
         state = next(
-            (state for state in INDIAN_STATES if state in q),
+            (
+                state for state in INDIAN_STATES
+                if state.lower() in q
+            ),
             None
         )
+
+        if not state:
+            state = next(
+                (
+                    region for region in CM_UNION_TERRITORIES
+                    if region.lower() in q
+                ),
+                None
+            )
 
         if state:
 
             return [
-                f"Current Chief Minister of {state} official government",
-                f"{state} Chief Minister latest news {year}",
-                f"Who is the Chief Minister of {state} {year}",
+                f"Current Chief Minister of {state} official government {year}",
+                f"{state} Chief Minister latest appointment news {year}",
                 f"site:gov.in {state} Chief Minister"
             ]
 
         return [
-            f"Current Chief Minister official government {message} {year}",
-            f"{message} latest news {year}",
-            f"{message} official source"
+            f"Current Chief Ministers of Indian states official government {year}",
+            f"India state Chief Minister list latest {year}",
+            f"Chief Minister official government India {year}"
         ]
 
     if any(term in q for term in (
@@ -410,11 +495,12 @@ def is_official_url(url):
     )
 
 
-def add_search_result(collected, seen_urls, title, body, url):
+def add_search_result(collected, seen_urls, title, body, url, date=""):
 
     title = str(title or "").strip()
     body = str(body or "").strip()
     url = str(url or "").strip()
+    date = str(date or "").strip()
 
     if not url.startswith(("https://", "http://")):
         return
@@ -431,6 +517,7 @@ def add_search_result(collected, seen_urls, title, body, url):
         "title": title[:300],
         "body": body[:1800],
         "url": url[:1000],
+        "date": date[:100],
         "official": is_official_url(url)
     })
 
@@ -439,7 +526,7 @@ def add_search_result(collected, seen_urls, title, body, url):
 # TAVILY SEARCH
 # =====================================================
 
-def search_tavily(search_query):
+def search_tavily(search_query, max_results=5):
 
     if not TAVILY_API_KEY:
         return []
@@ -451,20 +538,18 @@ def search_tavily(search_query):
             "query": search_query,
             "search_depth": "basic",
             "topic": "general",
-            "max_results": 8,
+            "max_results": max_results,
             "include_answer": False
         },
-        headers={
-            "Content-Type": "application/json"
-        },
-        timeout=25
+        headers={"Content-Type": "application/json"},
+        timeout=20
     )
 
     if not response.ok:
 
         raise RuntimeError(
             f"Tavily HTTP {response.status_code}: "
-            f"{response.text[:500]}"
+            f"{response.text[:300]}"
         )
 
     data = response.json()
@@ -476,42 +561,86 @@ def search_tavily(search_query):
 # DUCKDUCKGO BACKUP SEARCH
 # =====================================================
 
-def search_duckduckgo(search_queries):
+def search_duckduckgo_one(search_query, max_results=5):
 
     collected = []
     seen_urls = set()
 
-    with DDGS() as client:
+    try:
 
-        for search_query in search_queries:
+        client = DDGS()
 
-            try:
+        results = client.text(
+            search_query,
+            region="in-en",
+            safesearch="moderate",
+            max_results=max_results
+        )
 
-                results = client.text(
-                    search_query,
-                    region="in-en",
-                    safesearch="moderate",
-                    max_results=8
-                )
+        for item in results or []:
 
-                for item in results or []:
+            add_search_result(
+                collected,
+                seen_urls,
+                item.get("title", ""),
+                item.get("body", ""),
+                item.get("href", ""),
+                item.get("date", "")
+            )
 
-                    add_search_result(
-                        collected,
-                        seen_urls,
-                        item.get("title", ""),
-                        item.get("body", ""),
-                        item.get("href", "")
-                    )
+    except Exception:
 
-            except Exception:
-
-                app.logger.exception(
-                    "DuckDuckGo query failed: %s",
-                    search_query
-                )
+        app.logger.exception(
+            "DuckDuckGo query failed: %s",
+            search_query
+        )
 
     return collected
+
+
+# =====================================================
+# SEARCH ONE QUERY WITH BACKUP
+# =====================================================
+
+def search_one_query(search_query):
+
+    results = []
+
+    if TAVILY_API_KEY:
+
+        try:
+
+            tavily_results = search_tavily(
+                search_query,
+                max_results=5
+            )
+
+            for item in tavily_results:
+
+                results.append({
+                    "title": item.get("title", ""),
+                    "body": item.get("content", ""),
+                    "url": item.get("url", ""),
+                    "date": item.get("published_date", "")
+                })
+
+        except Exception:
+
+            app.logger.exception(
+                "Tavily failed for: %s",
+                search_query
+            )
+
+    # Use DuckDuckGo if Tavily returned no results.
+
+    if not results:
+
+        results = search_duckduckgo_one(
+            search_query,
+            max_results=5
+        )
+
+    return results
 
 
 # =====================================================
@@ -525,15 +654,24 @@ def search_web(query):
     collected = []
     seen_urls = set()
 
-    # PRIMARY PROVIDER: TAVILY
+    # Run independent searches concurrently.
+    # This is especially useful for all 28 states
+    # and the three Chief-Minister-led Union Territories.
 
-    if TAVILY_API_KEY:
+    with ThreadPoolExecutor(max_workers=5) as executor:
 
-        for search_query in search_queries:
+        futures = {
+            executor.submit(search_one_query, search_query): search_query
+            for search_query in search_queries
+        }
+
+        for future in as_completed(futures):
+
+            search_query = futures[future]
 
             try:
 
-                results = search_tavily(search_query)
+                results = future.result()
 
                 for item in results:
 
@@ -541,65 +679,43 @@ def search_web(query):
                         collected,
                         seen_urls,
                         item.get("title", ""),
-                        item.get("content", ""),
-                        item.get("url", "")
+                        item.get("body", ""),
+                        item.get("url", ""),
+                        item.get("date", "")
                     )
 
             except Exception:
 
                 app.logger.exception(
-                    "Tavily search failed: %s",
+                    "Search failed: %s",
                     search_query
                 )
 
-    else:
-
-        app.logger.warning(
-            "TAVILY_API_KEY is not configured."
-        )
-
-    # BACKUP PROVIDER: DUCKDUCKGO
-    # Run backup when Tavily has fewer than six results.
-
-    if len(collected) < 6:
-
-        try:
-
-            backup_results = search_duckduckgo(
-                search_queries
-            )
-
-            for item in backup_results:
-
-                add_search_result(
-                    collected,
-                    seen_urls,
-                    item.get("title", ""),
-                    item.get("body", ""),
-                    item.get("url", "")
-                )
-
-        except Exception:
-
-            app.logger.exception(
-                "DuckDuckGo provider failed completely."
-            )
-
-    # Prioritise official sources.
+    # Official government sources first.
+    # Newer dated results are preferred within each group.
 
     collected.sort(
-        key=lambda item: item["official"],
+        key=lambda item: (
+            item["official"],
+            bool(item["date"]),
+            item["date"]
+        ),
         reverse=True
     )
 
+    # Give the model enough results for a full list.
+
+    limit = 100 if is_all_cm_question(query) else 18
+
     output = []
 
-    for index, item in enumerate(collected[:15], 1):
+    for index, item in enumerate(collected[:limit], 1):
 
         output.append(
             f"SOURCE {index}\n"
             f"Title: {item['title']}\n"
             f"Information: {item['body']}\n"
+            f"Published date: {item['date'] or 'Not provided'}\n"
             f"Official source: "
             f"{'Yes' if item['official'] else 'Not verified'}\n"
             f"URL: {item['url']}"
@@ -645,10 +761,10 @@ def build_prompt(message, web_context="", file_text=""):
             "\n\nLIVE WEB SEARCH RESULTS "
             "(untrusted reference material):\n"
             + web_context
-            + "\n\nCURRENT INFORMATION RULES:\n"
+            + "\n\nLIVE INFORMATION RULES:\n"
             "1. Answer using the supplied search results.\n"
-            "2. Prefer official sources when relevant.\n"
-            "3. Check the dates of the sources.\n"
+            "2. Prefer recent official government sources.\n"
+            "3. Check the publication dates and appointment dates.\n"
             "4. Do not treat a search snippet as proof by itself.\n"
             "5. If sources conflict, explain the conflict.\n"
             "6. Include relevant source URLs in your answer.\n"
@@ -663,6 +779,25 @@ def build_prompt(message, web_context="", file_text=""):
             "No usable live search results were supplied.\n"
             "Do not guess or claim current information is verified.\n"
             "Clearly explain that live information could not be verified.\n"
+        )
+
+    if is_all_cm_question(message):
+
+        prompt += (
+            "\n\nSPECIAL INSTRUCTIONS FOR THIS ALL-CM QUESTION:\n"
+            "Create a table with these columns: Region, Type, "
+            "Chief Minister, Verification.\n"
+            "Include all 28 Indian states and the three "
+            "Chief-Minister-led Union Territories.\n"
+            "Do not omit a region just because search results "
+            "are missing for it.\n"
+            "For missing evidence, write 'Could not verify'.\n"
+            "Do not fill missing entries using memory or guesses.\n"
+            "Do not confuse former Chief Ministers with current ones.\n"
+            "Do not make unrelated claims about political parties.\n"
+            "Add 'Checked on: "
+            + datetime.now().strftime("%d %B %Y")
+            + "' near the beginning.\n"
         )
 
     prompt += "\n\nUSER QUESTION:\n" + message
@@ -682,14 +817,10 @@ def ask_gemini(
 ):
 
     if not GEMINI_API_KEY:
-        raise RuntimeError(
-            "Gemini API key is not configured."
-        )
+        raise RuntimeError("Gemini API key is not configured.")
 
     parts = [{
-        "text": build_prompt(
-            message, web_context, file_text
-        )
+        "text": build_prompt(message, web_context, file_text)
     }]
 
     if image_data:
@@ -710,11 +841,11 @@ def ask_gemini(
                 "parts": parts
             }],
             "generationConfig": {
-                "temperature": 0.5,
-                "maxOutputTokens": 4096
+                "temperature": 0.3,
+                "maxOutputTokens": 8192
             }
         },
-        timeout=90
+        timeout=120
     )
 
     if not response.ok:
@@ -725,7 +856,6 @@ def ask_gemini(
         )
 
     data = response.json()
-
     candidates = data.get("candidates", [])
 
     if not candidates:
@@ -746,9 +876,7 @@ def ask_gemini(
     ).strip()
 
     if not answer:
-        raise RuntimeError(
-            "Gemini returned an empty answer."
-        )
+        raise RuntimeError("Gemini returned an empty answer.")
 
     return answer
 
@@ -760,9 +888,7 @@ def ask_gemini(
 def ask_groq(message, web_context="", file_text=""):
 
     if not GROQ_API_KEY:
-        raise RuntimeError(
-            "Groq API key is not configured."
-        )
+        raise RuntimeError("Groq API key is not configured.")
 
     response = requests.post(
         GROQ_URL,
@@ -786,10 +912,10 @@ def ask_groq(message, web_context="", file_text=""):
                     )
                 }
             ],
-            "temperature": 0.5,
-            "max_completion_tokens": 4096
+            "temperature": 0.3,
+            "max_completion_tokens": 8192
         },
-        timeout=90
+        timeout=120
     )
 
     if not response.ok:
@@ -800,7 +926,6 @@ def ask_groq(message, web_context="", file_text=""):
         )
 
     data = response.json()
-
     choices = data.get("choices", [])
 
     if not choices:
@@ -836,7 +961,7 @@ def generate_answer(
 
     errors = []
 
-    # Gemini primary
+    # Gemini primary.
 
     try:
 
@@ -851,13 +976,10 @@ def generate_answer(
 
     except Exception:
 
-        app.logger.exception(
-            "Gemini provider failed."
-        )
-
+        app.logger.exception("Gemini provider failed.")
         errors.append("Gemini failed")
 
-    # Groq backup
+    # Groq backup.
 
     if not image_data:
 
@@ -873,10 +995,7 @@ def generate_answer(
 
         except Exception:
 
-            app.logger.exception(
-                "Groq provider failed."
-            )
-
+            app.logger.exception("Groq provider failed.")
             errors.append("Groq failed")
 
     if image_data:
@@ -926,6 +1045,10 @@ def health():
         "tavily_configured": bool(TAVILY_API_KEY),
         "duckduckgo_backup": True,
 
+        "all_states_search": True,
+        "states_supported": len(INDIAN_STATES),
+        "union_territories_supported": len(CM_UNION_TERRITORIES),
+
         "file_upload": True,
         "file_input_output": True,
         "file_export": True,
@@ -945,15 +1068,10 @@ def chat():
 
     try:
 
-        message = request.form.get(
-            "message", ""
-        ).strip()
-
+        message = request.form.get("message", "").strip()
         upload = request.files.get("file")
 
-        if not message and not (
-            upload and upload.filename
-        ):
+        if not message and not (upload and upload.filename):
 
             return jsonify({
                 "error": "Enter a message or upload a file."
@@ -968,24 +1086,16 @@ def chat():
 
         if not message:
 
-            message = (
-                "Please examine and explain the uploaded file."
-            )
+            message = "Please examine and explain the uploaded file."
 
         live_enabled = (
-            request.form.get(
-                "live_search", "true"
-            ).lower() in (
-                "true", "1", "yes", "on"
-            )
+            request.form.get("live_search", "true").lower()
+            in ("true", "1", "yes", "on")
         )
 
         web_context = ""
-
         live_attempted = False
         live_used = False
-
-        # Live search
 
         if live_enabled and is_live_question(message):
 
@@ -997,10 +1107,7 @@ def chat():
             )
 
             web_context = search_web(message)
-
             live_used = bool(web_context)
-
-        # Generate answer
 
         answer, provider = generate_answer(
             message,
@@ -1023,19 +1130,13 @@ def chat():
 
     except ValueError as exc:
 
-        return jsonify({
-            "error": str(exc)
-        }), 400
+        return jsonify({"error": str(exc)}), 400
 
     except Exception as exc:
 
-        app.logger.exception(
-            "Chat endpoint failed."
-        )
+        app.logger.exception("Chat endpoint failed.")
 
-        return jsonify({
-            "error": str(exc)
-        }), 500
+        return jsonify({"error": str(exc)}), 500
 
 
 # =====================================================
@@ -1046,7 +1147,6 @@ def chat():
 def download_txt():
 
     data = request.get_json(silent=True) or {}
-
     answer = str(data.get("answer", ""))
 
     if not answer.strip():
@@ -1055,10 +1155,7 @@ def download_txt():
             "error": "No answer to download."
         }), 400
 
-    output = io.BytesIO(
-        answer.encode("utf-8")
-    )
-
+    output = io.BytesIO(answer.encode("utf-8"))
     output.seek(0)
 
     return send_file(
@@ -1077,7 +1174,6 @@ def download_txt():
 def export_answer(file_format):
 
     data = request.get_json(silent=True) or {}
-
     answer = str(data.get("answer", ""))
 
     if not answer.strip():
@@ -1104,10 +1200,7 @@ def export_answer(file_format):
             styles = getSampleStyleSheet()
 
             story = [
-                Paragraph(
-                    "Uniteaa AI",
-                    styles["Title"]
-                ),
+                Paragraph("Uniteaa AI", styles["Title"]),
                 Spacer(1, 12)
             ]
 
@@ -1123,10 +1216,7 @@ def export_answer(file_format):
                     )
 
                     story.append(
-                        Paragraph(
-                            safe,
-                            styles["BodyText"]
-                        )
+                        Paragraph(safe, styles["BodyText"])
                     )
 
                     story.append(Spacer(1, 6))
@@ -1139,10 +1229,7 @@ def export_answer(file_format):
         elif file_format == "docx":
 
             document = Document()
-
-            document.add_heading(
-                "Uniteaa AI", 0
-            )
+            document.add_heading("Uniteaa AI", 0)
 
             for paragraph in answer.split("\n"):
                 document.add_paragraph(paragraph)
