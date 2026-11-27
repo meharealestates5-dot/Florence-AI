@@ -62,7 +62,6 @@ GEMINI_URL = (
 )
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-
 TAVILY_URL = "https://api.tavily.com/search"
 
 ALLOWED_EXTENSIONS = {
@@ -108,6 +107,7 @@ ANSWERING RULES:
     actual search results were supplied.
 11. Do not present outdated information as current.
 12. Be concise when the user requests short answers.
+13. Do not invent citations or source URLs.
 """
 
 
@@ -264,7 +264,7 @@ LIVE_TERMS = (
     "24k gold", "chief minister", "prime minister",
     "president now", "new update", "latest update",
     "current president", "current governor",
-    "current leader"
+    "current leader", "who won"
 )
 
 
@@ -276,9 +276,10 @@ def is_live_question(message):
         return True
 
     patterns = (
-        r"\bwho is (the )?(current|present)\b",
-        r"\bwho is (the )?(cm|chief minister|prime minister)\b",
-        r"\bwho is .* (now|today)\b",
+        r"\bwho is\b.*\b(current|present|now|today)\b",
+        r"\bwho is\b.*\b(cm|chief minister|prime minister|president|governor)\b",
+        r"\b(current|present)\b.*\b(cm|chief minister|prime minister|president|governor)\b",
+        r"\b(cm|chief minister|prime minister)\b.*\b(of|in)\b",
         r"\bwhat is happening\b",
         r"\bhow much does .* cost\b",
         r"\bwhen is the next\b",
@@ -287,10 +288,10 @@ def is_live_question(message):
         r"\b(rate|price) of gold\b",
         r"\bgold rate\b",
         r"\bgold price\b",
-        r"\bwho won\b",
         r"\bhow many .* currently\b",
         r"\bwhat happened today\b",
-        r"\bnews about\b"
+        r"\bnews about\b",
+        r"\blatest .* news\b"
     )
 
     return any(re.search(pattern, q) for pattern in patterns)
@@ -300,27 +301,70 @@ def is_live_question(message):
 # SEARCH QUERY BUILDER
 # =====================================================
 
+INDIAN_STATES = [
+    "andhra pradesh",
+    "arunachal pradesh",
+    "assam",
+    "bihar",
+    "chhattisgarh",
+    "goa",
+    "gujarat",
+    "haryana",
+    "himachal pradesh",
+    "jharkhand",
+    "karnataka",
+    "kerala",
+    "madhya pradesh",
+    "maharashtra",
+    "manipur",
+    "meghalaya",
+    "mizoram",
+    "nagaland",
+    "odisha",
+    "punjab",
+    "rajasthan",
+    "sikkim",
+    "tamil nadu",
+    "telangana",
+    "tripura",
+    "uttar pradesh",
+    "uttarakhand",
+    "west bengal"
+]
+
+
 def get_search_queries(message):
 
     q = message.lower().strip()
     year = datetime.now().year
 
-    # Tamil Nadu Chief Minister
-    if (
-        ("chief minister" in q or re.search(r"\bcm\b", q))
-        and (
-            "tamil nadu" in q
-            or re.search(r"\btn\b", q)
-            or "who is" in q
+    is_cm_question = (
+        "chief minister" in q
+        or bool(re.search(r"\bcm\b", q))
+    )
+
+    if is_cm_question:
+
+        state = next(
+            (state for state in INDIAN_STATES if state in q),
+            None
         )
-    ):
+
+        if state:
+
+            return [
+                f"Current Chief Minister of {state} official government",
+                f"{state} Chief Minister latest news {year}",
+                f"Who is the Chief Minister of {state} {year}",
+                f"site:gov.in {state} Chief Minister"
+            ]
+
         return [
-            "Tamil Nadu Chief Minister current official government",
-            "Tamil Nadu Chief Minister latest news",
-            f"Who is the Chief Minister of Tamil Nadu {year}"
+            f"Current Chief Minister official government {message} {year}",
+            f"{message} latest news {year}",
+            f"{message} official source"
         ]
 
-    # Gold and silver
     if any(term in q for term in (
         "gold rate", "gold price", "22k gold",
         "24k gold", "silver rate", "silver price"
@@ -331,16 +375,14 @@ def get_search_queries(message):
             "Today silver rate Chennai India INR"
         ]
 
-    # Indian Prime Minister
-    if "prime minister" in q and (
-        "india" in q or "who is" in q
-    ):
+    if "prime minister" in q:
+
         return [
-            "Current Prime Minister of India official government",
-            f"Prime Minister of India latest information {year}"
+            f"Current Prime Minister official government {message} {year}",
+            f"{message} latest news {year}",
+            f"{message} official source"
         ]
 
-    # General current information
     return [
         f"{message} latest information {year}",
         f"{message} official source",
@@ -354,7 +396,10 @@ def get_search_queries(message):
 
 def is_official_url(url):
 
-    domain = urlparse(url).netloc.lower()
+    try:
+        domain = urlparse(url).netloc.lower().split(":")[0]
+    except Exception:
+        return False
 
     return (
         domain.endswith(".gov.in")
@@ -481,6 +526,7 @@ def search_web(query):
     seen_urls = set()
 
     # PRIMARY PROVIDER: TAVILY
+
     if TAVILY_API_KEY:
 
         for search_query in search_queries:
@@ -506,22 +552,32 @@ def search_web(query):
                     search_query
                 )
 
-            if len(collected) >= 8:
-                break
-
     else:
 
-        app.logger.info(
-            "TAVILY_API_KEY is not configured. "
-            "Using DuckDuckGo."
+        app.logger.warning(
+            "TAVILY_API_KEY is not configured."
         )
 
     # BACKUP PROVIDER: DUCKDUCKGO
-    if not collected:
+    # Run backup when Tavily has fewer than six results.
+
+    if len(collected) < 6:
 
         try:
 
-            collected = search_duckduckgo(search_queries)
+            backup_results = search_duckduckgo(
+                search_queries
+            )
+
+            for item in backup_results:
+
+                add_search_result(
+                    collected,
+                    seen_urls,
+                    item.get("title", ""),
+                    item.get("body", ""),
+                    item.get("url", "")
+                )
 
         except Exception:
 
@@ -529,7 +585,8 @@ def search_web(query):
                 "DuckDuckGo provider failed completely."
             )
 
-    # Prefer official sources
+    # Prioritise official sources.
+
     collected.sort(
         key=lambda item: item["official"],
         reverse=True
@@ -537,7 +594,7 @@ def search_web(query):
 
     output = []
 
-    for index, item in enumerate(collected[:12], 1):
+    for index, item in enumerate(collected[:15], 1):
 
         output.append(
             f"SOURCE {index}\n"
@@ -591,11 +648,12 @@ def build_prompt(message, web_context="", file_text=""):
             + "\n\nCURRENT INFORMATION RULES:\n"
             "1. Answer using the supplied search results.\n"
             "2. Prefer official sources when relevant.\n"
-            "3. Do not override newer results with old knowledge.\n"
-            "4. If sources conflict, explain the conflict.\n"
-            "5. Include relevant source URLs in your answer.\n"
-            "6. Do not invent dates, statistics or links.\n"
-            "7. If results do not establish the answer, say so.\n"
+            "3. Check the dates of the sources.\n"
+            "4. Do not treat a search snippet as proof by itself.\n"
+            "5. If sources conflict, explain the conflict.\n"
+            "6. Include relevant source URLs in your answer.\n"
+            "7. Do not invent dates, statistics or links.\n"
+            "8. If results do not establish the answer, say so.\n"
         )
 
     elif is_live_question(message):
@@ -779,6 +837,7 @@ def generate_answer(
     errors = []
 
     # Gemini primary
+
     try:
 
         answer = ask_gemini(
@@ -790,7 +849,7 @@ def generate_answer(
 
         return answer, "gemini"
 
-    except Exception as exc:
+    except Exception:
 
         app.logger.exception(
             "Gemini provider failed."
@@ -799,6 +858,7 @@ def generate_answer(
         errors.append("Gemini failed")
 
     # Groq backup
+
     if not image_data:
 
         try:
@@ -926,6 +986,7 @@ def chat():
         live_used = False
 
         # Live search
+
         if live_enabled and is_live_question(message):
 
             live_attempted = True
@@ -939,7 +1000,8 @@ def chat():
 
             live_used = bool(web_context)
 
-        # Generate AI answer
+        # Generate answer
+
         answer, provider = generate_answer(
             message,
             image_data,
