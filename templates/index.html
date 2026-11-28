@@ -6,8 +6,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#08111f">
 <title>Uniteaa AI</title>
-<style>
 
+<style>
 :root {
  --bg:#08111f;
  --panel:#0d1a2b;
@@ -19,14 +19,11 @@
  --blue2:#18375a;
 }
 
-* {
- box-sizing:border-box;
-}
+* { box-sizing:border-box; }
 
-html, body {
+html,body {
  width:100%;
  height:100%;
- max-width:100%;
  margin:0;
  overflow:hidden;
 }
@@ -40,13 +37,8 @@ body {
  height:100dvh;
 }
 
-button, textarea, input {
- font:inherit;
-}
-
-button {
- cursor:pointer;
-}
+button,textarea,input { font:inherit; }
+button { cursor:pointer; }
 
 .sidebar {
  width:245px;
@@ -65,11 +57,9 @@ button {
  margin:3px 0 18px;
 }
 
-.logo span {
- color:#75b7ff;
-}
+.logo span { color:#75b7ff; }
 
-.side-btn, .action {
+.side-btn,.action {
  background:#172943;
  color:white;
  border:1px solid #2a4362;
@@ -77,9 +67,7 @@ button {
  border-radius:10px;
 }
 
-.side-btn:hover, .action:hover {
- background:#24466d;
-}
+.side-btn:hover,.action:hover { background:#24466d; }
 
 .creator {
  margin-top:auto;
@@ -131,9 +119,7 @@ header {
  overflow-wrap:anywhere;
 }
 
-.user {
- background:var(--blue2);
-}
+.user { background:var(--blue2); }
 
 .ai {
  background:var(--panel2);
@@ -145,6 +131,20 @@ header {
  font-size:12px;
  margin-bottom:6px;
  font-weight:bold;
+}
+
+.sources {
+ margin-top:12px;
+ padding-top:10px;
+ border-top:1px solid #34506d;
+ font-size:13px;
+}
+
+.sources a {
+ display:block;
+ color:#8fc4ff;
+ margin-top:6px;
+ overflow-wrap:anywhere;
 }
 
 .composer {
@@ -176,9 +176,7 @@ textarea {
  font:inherit;
 }
 
-textarea:focus {
- outline:2px solid #2878d0;
-}
+textarea:focus { outline:2px solid #2878d0; }
 
 .action {
  font-size:14px;
@@ -193,9 +191,7 @@ textarea:focus {
  padding:0 20px;
 }
 
-.send:hover {
- background:#398be5;
-}
+.send:hover { background:#398be5; }
 
 .tools {
  max-width:1000px;
@@ -218,9 +214,7 @@ textarea:focus {
  border-radius:9px;
 }
 
-.toggle input {
- accent-color:#398be5;
-}
+.toggle input { accent-color:#398be5; }
 
 #fileName {
  color:#a9bdd6;
@@ -238,56 +232,15 @@ textarea:focus {
  min-height:15px;
 }
 
-#fileInput {
- display:none;
-}
-
-#imagePanel {
- display:none;
- max-width:1000px;
- margin:0 auto 9px;
- padding:12px;
- background:#122238;
- border:1px solid #2c4564;
- border-radius:12px;
-}
-
-#imagePanel.open {
- display:block;
-}
-
-.image-row {
- display:flex;
- gap:8px;
-}
-
-.image-row input {
- flex:1;
- min-width:0;
- padding:12px;
- background:#0b1727;
- color:white;
- border:1px solid #2c4564;
- border-radius:9px;
-}
+#fileInput { display:none; }
 
 button:disabled {
  opacity:.55;
  cursor:not-allowed;
 }
 
-.generated-image {
- max-width:100%;
- height:auto;
- border-radius:12px;
- margin-top:10px;
-}
-
-/* TABLETS AND MOBILE */
-
 @media screen and (max-width:700px) {
-
- html, body {
+ html,body {
   width:100%;
   height:100%;
   overflow:hidden;
@@ -299,9 +252,7 @@ button:disabled {
   min-width:0;
  }
 
- .sidebar {
-  display:none !important;
- }
+ .sidebar { display:none !important; }
 
  .main {
   width:100%;
@@ -321,7 +272,6 @@ button:disabled {
   width:100%;
   min-width:0;
   padding:12px;
-  overscroll-behavior:contain;
  }
 
  .message {
@@ -338,7 +288,7 @@ button:disabled {
   width:100%;
   min-width:0;
   padding:9px;
-  padding-bottom:max(9px, env(safe-area-inset-bottom));
+  padding-bottom:max(9px,env(safe-area-inset-bottom));
  }
 
  .input-row {
@@ -403,69 +353,36 @@ button:disabled {
   line-height:1.4;
   margin-top:7px;
  }
-
- #imagePanel {
-  width:100%;
-  max-width:100%;
-  padding:9px;
- }
-
- .image-row {
-  display:flex;
-  flex-direction:column;
-  width:100%;
- }
-
- .image-row input,
- .image-row button {
-  width:100%;
-  min-width:0;
-  min-height:43px;
- }
-
- .generated-image {
-  max-width:100%;
- }
-
- img, video, canvas {
-  max-width:100%;
-  height:auto;
- }
 }
 
-/* SMALL PHONES */
-
 @media screen and (max-width:380px) {
-
  header {
   font-size:16px;
   padding:9px;
  }
 
- .tools .action {
-  flex-basis:calc(50% - 6px);
- }
-
- .composer {
-  padding:7px;
- }
-
- .message {
-  font-size:13px;
- }
+ .tools .action { flex-basis:calc(50% - 6px); }
+ .composer { padding:7px; }
+ .message { font-size:13px; }
 }
 </style>
 </head>
+
 <body>
 
 <aside class="sidebar">
  <div class="logo">Uniteaa <span>AI</span></div>
  <button class="side-btn" onclick="newChat()">＋ New Chat</button>
  <button class="side-btn" onclick="clearChat()">Clear Chat</button>
- <div class="creator">Created by<br><b>M. Mehanethra</b></div>
+
+ <div class="creator">
+  Created by<br>
+  <b>M. Mehanethra</b>
+ </div>
 </aside>
 
 <main class="main">
+
 <header>
  <span>Uniteaa AI</span>
  <span class="online">● Online</span>
@@ -480,280 +397,453 @@ button:disabled {
 
 <section class="composer">
 
-<div id="imagePanel">
- <div class="image-row">
-  <input id="imagePrompt" type="text"
-   placeholder="Describe the image you want to create...">
-  <button class="action send" id="imageBtn"
-   onclick="generateImage()">Generate image</button>
-  <button class="action" onclick="toggleImagePanel(false)">Close</button>
- </div>
-</div>
-
 <div class="input-row">
- <textarea id="message" placeholder="Message Uniteaa AI..." rows="1"></textarea>
- <button class="action send" id="sendBtn" onclick="sendMessage()">Send</button>
+ <textarea
+  id="message"
+  placeholder="Message Uniteaa AI..."
+  rows="1"
+ ></textarea>
+
+ <button
+  class="action send"
+  id="sendBtn"
+  onclick="sendMessage()"
+ >Send</button>
 </div>
 
 <div class="tools">
- <button class="action" onclick="document.getElementById('fileInput').click()">📎 Upload file</button>
- <input id="fileInput" type="file"
-  accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp"
-  onchange="showFileName()">
- <button class="action" id="voiceBtn" onclick="startVoice()">🎤 Dictate</button>
- <button class="action" onclick="speakLastAnswer()">🔊 Read answer</button>
- <button class="action" onclick="stopSpeaking()">■ Stop voice</button>
- <button class="action" onclick="toggleImagePanel()">🎨 Create image</button>
- <label class="toggle"><input id="liveSearch" type="checkbox" checked> Live search</label>
+
+ <button
+  class="action"
+  onclick="document.getElementById('fileInput').click()"
+ >📎 Upload file</button>
+
+ <input
+  id="fileInput"
+  type="file"
+  accept=".pdf,.docx,.txt,.csv,.md,.json,.png,.jpg,.jpeg,.webp"
+  onchange="showFileName()"
+ >
+
+ <button
+  class="action"
+  id="voiceBtn"
+  onclick="startVoice()"
+ >🎤 Dictate</button>
+
+ <button
+  class="action"
+  onclick="speakLastAnswer()"
+ >🔊 Read answer</button>
+
+ <button
+  class="action"
+  onclick="stopSpeaking()"
+ >■ Stop voice</button>
+
+ <label class="toggle">
+  <input id="liveSearch" type="checkbox" checked>
+  Live search
+ </label>
+
  <button class="action" onclick="downloadAnswer('txt')">TXT</button>
  <button class="action" onclick="downloadAnswer('pdf')">PDF</button>
  <button class="action" onclick="downloadAnswer('docx')">DOCX</button>
+
  <span id="fileName"></span>
 </div>
 
-<div id="status">Type a message, dictate, or upload a document or image.</div>
+<div id="status">
+ Type a message, dictate, or upload a document or image.
+</div>
+
 </section>
 </main>
 
 <script>
-const chat=document.getElementById("chat");
-const input=document.getElementById("message");
-const statusText=document.getElementById("status");
-const fileInput=document.getElementById("fileInput");
+const chat = document.getElementById("chat");
+const input = document.getElementById("message");
+const statusText = document.getElementById("status");
+const fileInput = document.getElementById("fileInput");
 
-let lastAnswer="";
-let recognition=null;
+let lastAnswer = "";
+let recognition = null;
 
-function addMessage(text,type){
- const box=document.createElement("div");
- box.className="message "+type;
- const who=document.createElement("div");
- who.className="who";
- who.textContent=type==="user"?"YOU":"UNITEAA AI";
- const content=document.createElement("div");
- content.textContent=text;
+
+function addMessage(text,type,sources=[]) {
+ const box = document.createElement("div");
+ box.className = "message " + type;
+
+ const who = document.createElement("div");
+ who.className = "who";
+ who.textContent = type === "user" ? "YOU" : "UNITEAA AI";
+
+ const content = document.createElement("div");
+ content.textContent = text;
+
  box.append(who,content);
+
+ if (sources && sources.length) {
+  const sourceBox = document.createElement("div");
+  sourceBox.className = "sources";
+
+  const heading = document.createElement("b");
+  heading.textContent = "Sources";
+  sourceBox.appendChild(heading);
+
+  sources.forEach(source => {
+   if (!source.url) return;
+
+   try {
+    const url = new URL(source.url);
+
+    if (!["http:","https:"].includes(url.protocol)) return;
+
+    const link = document.createElement("a");
+    link.href = url.href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = source.title || url.hostname;
+
+    sourceBox.appendChild(link);
+   } catch (e) {}
+  });
+
+  if (sourceBox.children.length > 1) {
+   box.appendChild(sourceBox);
+  }
+ }
+
  chat.appendChild(box);
- chat.scrollTop=chat.scrollHeight;
+ chat.scrollTop = chat.scrollHeight;
+
  return content;
 }
 
-function addImage(image){
- const box=addMessage("Generated image","ai");
- const img=document.createElement("img");
- img.src=image;
- img.alt="Image generated by Uniteaa AI";
- img.className="generated-image";
- box.appendChild(img);
- chat.scrollTop=chat.scrollHeight;
+
+function showFileName() {
+ const file = fileInput.files[0];
+ document.getElementById("fileName").textContent =
+  file ? file.name : "";
 }
 
-function showFileName(){
- const file=fileInput.files[0];
- document.getElementById("fileName").textContent=file?file.name:"";
-}
 
-async function sendMessage(){
- const message=input.value.trim();
- const file=fileInput.files[0];
- if(!message&&!file)return;
+async function sendMessage() {
+ const message = input.value.trim();
+ const file = fileInput.files[0];
 
- addMessage(message+(file?"\n📎 "+file.name:""),"user");
+ if (!message && !file) return;
 
- const formData=new FormData();
+ addMessage(
+  message + (file ? "\n📎 " + file.name : ""),
+  "user"
+ );
+
+ const formData = new FormData();
+
  formData.append("message",message);
- formData.append("live_search",
-  document.getElementById("liveSearch").checked?"true":"false");
- if(file)formData.append("file",file);
 
- input.value="";
- fileInput.value="";
+ formData.append(
+  "live_search",
+  document.getElementById("liveSearch").checked
+   ? "true"
+   : "false"
+ );
+
+ if (file) {
+  formData.append("file",file);
+ }
+
+ input.value = "";
+ fileInput.value = "";
  showFileName();
 
- statusText.textContent="Uniteaa AI is thinking...";
- const btn=document.getElementById("sendBtn");
- btn.disabled=true;
+ statusText.textContent = "Uniteaa AI is thinking...";
 
- try{
-  const response=await fetch("/chat",{method:"POST",body:formData});
-  const data=await response.json();
-  if(!response.ok)throw new Error(data.error||"Something went wrong.");
+ const btn = document.getElementById("sendBtn");
+ btn.disabled = true;
 
-  lastAnswer=data.answer||"";
-  addMessage(lastAnswer,"ai");
-  statusText.textContent=data.live_search_used?
-   "Response received · Live search used.":"Response received.";
- }catch(error){
-  addMessage("Error: "+error.message,"ai");
-  statusText.textContent="Please try again.";
- }finally{
-  btn.disabled=false;
-  input.focus();
- }
-}
+ try {
+  const response = await fetch("/chat",{
+   method:"POST",
+   body:formData
+  });
 
-function startVoice(){
- const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
- if(!SpeechRecognition){
-  statusText.textContent="Voice dictation is not supported. Try Chrome or Edge.";
-  return;
- }
+  const raw = await response.text();
+  let data;
 
- if(recognition){
-  try{recognition.stop();}catch(e){}
- }
-
- recognition=new SpeechRecognition();
- recognition.lang="en-IN";
- recognition.interimResults=true;
- recognition.continuous=false;
-
- let finalText="";
- const originalText=input.value.trim();
-
- recognition.onstart=()=>{
-  statusText.textContent="Listening... Speak now.";
-  document.getElementById("voiceBtn").textContent="🎙 Listening";
- };
-
- recognition.onresult=(event)=>{
-  let interim="";
-  for(let i=event.resultIndex;i<event.results.length;i++){
-   const t=event.results[i][0].transcript;
-   if(event.results[i].isFinal)finalText+=t+" ";
-   else interim+=t;
+  try {
+   data = JSON.parse(raw);
+  } catch (error) {
+   throw new Error(
+    "The server returned an invalid response: " +
+    raw.slice(0,250)
+   );
   }
-  input.value=(originalText+" "+finalText+interim).trim();
+
+  if (!response.ok) {
+   throw new Error(
+    data.error || "Server error: " + response.status
+   );
+  }
+
+  const answer =
+   data.answer ||
+   data.reply ||
+   data.response ||
+   data.output ||
+   data.content ||
+   data.result ||
+   "";
+
+  if (typeof answer !== "string" || !answer.trim()) {
+   console.error("Unexpected response:",data);
+   throw new Error(
+    "The server did not return an answer. Please check the server logs."
+   );
+  }
+
+  lastAnswer = answer.trim();
+
+  addMessage(
+   lastAnswer,
+   "ai",
+   data.sources || []
+  );
+
+  if (data.live_search_used) {
+   statusText.textContent =
+    "Answer received · Live search used · Provider: " +
+    (data.provider || "AI");
+  } else if (data.search_attempted) {
+   statusText.textContent =
+    "Answer received · No live search results were found · Provider: " +
+    (data.provider || "AI");
+  } else {
+   statusText.textContent =
+    "Answer received · Provider: " +
+    (data.provider || "AI");
+  }
+
+ } catch (error) {
+  console.error("Uniteaa AI error:",error);
+
+  addMessage(
+   "Sorry, I couldn't complete your request.\n\n" +
+   error.message,
+   "ai"
+  );
+
+  statusText.textContent = "Request failed. Please try again.";
+
+ } finally {
+  btn.disabled = false;
+  input.focus();
+ }
+}
+
+
+function startVoice() {
+ const SpeechRecognition =
+  window.SpeechRecognition ||
+  window.webkitSpeechRecognition;
+
+ if (!SpeechRecognition) {
+  statusText.textContent =
+   "Voice dictation is not supported. Try Chrome or Edge.";
+  return;
+ }
+
+ if (recognition) {
+  try { recognition.stop(); } catch (e) {}
+ }
+
+ recognition = new SpeechRecognition();
+ recognition.lang = "en-IN";
+ recognition.interimResults = true;
+ recognition.continuous = false;
+
+ let finalText = "";
+ const originalText = input.value.trim();
+
+ recognition.onstart = () => {
+  statusText.textContent = "Listening... Speak now.";
+  document.getElementById("voiceBtn").textContent =
+   "🎙 Listening";
  };
 
- recognition.onerror=(event)=>{
-  statusText.textContent="Voice error: "+event.error;
+ recognition.onresult = event => {
+  let interim = "";
+
+  for (
+   let i = event.resultIndex;
+   i < event.results.length;
+   i++
+  ) {
+   const transcript = event.results[i][0].transcript;
+
+   if (event.results[i].isFinal) {
+    finalText += transcript + " ";
+   } else {
+    interim += transcript;
+   }
+  }
+
+  input.value =
+   (originalText + " " + finalText + interim).trim();
  };
 
- recognition.onend=()=>{
-  input.value=(originalText+" "+finalText).trim();
-  statusText.textContent=finalText.trim()?
-   "Voice added to your message.":"Voice dictation stopped.";
-  document.getElementById("voiceBtn").textContent="🎤 Dictate";
+ recognition.onerror = event => {
+  statusText.textContent = "Voice error: " + event.error;
+ };
+
+ recognition.onend = () => {
+  input.value =
+   (originalText + " " + finalText).trim();
+
+  statusText.textContent = finalText.trim()
+   ? "Voice added to your message."
+   : "Voice dictation stopped.";
+
+  document.getElementById("voiceBtn").textContent =
+   "🎤 Dictate";
+
   input.focus();
  };
 
- try{recognition.start();}
- catch(e){statusText.textContent="Could not start voice input.";}
+ try {
+  recognition.start();
+ } catch (error) {
+  statusText.textContent = "Could not start voice input.";
+ }
 }
 
-function speakLastAnswer(){
- if(!lastAnswer){
-  statusText.textContent="There is no answer to read aloud yet.";
+
+function speakLastAnswer() {
+ if (!lastAnswer) {
+  statusText.textContent =
+   "There is no answer to read aloud yet.";
   return;
  }
- if(!("speechSynthesis" in window)){
-  statusText.textContent="Voice output is not supported.";
+
+ if (!("speechSynthesis" in window)) {
+  statusText.textContent =
+   "Voice output is not supported.";
   return;
  }
+
  window.speechSynthesis.cancel();
- const utterance=new SpeechSynthesisUtterance(lastAnswer);
- utterance.lang="en-IN";
- utterance.rate=1;
- utterance.onstart=()=>statusText.textContent="Reading answer aloud...";
- utterance.onend=()=>statusText.textContent="Finished reading.";
+
+ const utterance =
+  new SpeechSynthesisUtterance(lastAnswer);
+
+ utterance.lang = "en-IN";
+ utterance.rate = 1;
+
+ utterance.onstart = () => {
+  statusText.textContent = "Reading answer aloud...";
+ };
+
+ utterance.onend = () => {
+  statusText.textContent = "Finished reading.";
+ };
+
  window.speechSynthesis.speak(utterance);
 }
 
-function stopSpeaking(){
- if("speechSynthesis" in window)window.speechSynthesis.cancel();
- statusText.textContent="Voice playback stopped.";
+
+function stopSpeaking() {
+ if ("speechSynthesis" in window) {
+  window.speechSynthesis.cancel();
+ }
+
+ if (recognition) {
+  try { recognition.stop(); } catch (e) {}
+ }
+
+ statusText.textContent = "Voice playback stopped.";
 }
 
-async function downloadAnswer(format){
- if(!lastAnswer){
-  statusText.textContent="There is no answer to download yet.";
+
+async function downloadAnswer(format) {
+ if (!lastAnswer) {
+  statusText.textContent =
+   "There is no answer to download yet.";
   return;
  }
- const endpoint=format==="txt"?"/download":"/export/"+format;
- try{
-  const response=await fetch(endpoint,{
+
+ const endpoint =
+  format === "txt" ? "/download" : "/export/" + format;
+
+ try {
+  const response = await fetch(endpoint,{
    method:"POST",
    headers:{"Content-Type":"application/json"},
    body:JSON.stringify({answer:lastAnswer})
   });
-  if(!response.ok){
-   const error=await response.json();
-   throw new Error(error.error||"Download failed.");
+
+  if (!response.ok) {
+   let error = {};
+
+   try { error = await response.json(); } catch (e) {}
+
+   throw new Error(
+    error.error || "Download failed."
+   );
   }
-  const blob=await response.blob();
-  const url=URL.createObjectURL(blob);
-  const link=document.createElement("a");
-  link.href=url;
-  link.download="uniteaa_ai_answer."+format;
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "uniteaa_ai_answer." + format;
+
   document.body.appendChild(link);
   link.click();
   link.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-  statusText.textContent=format.toUpperCase()+" downloaded.";
- }catch(error){
-  statusText.textContent=error.message;
+
+  setTimeout(() => URL.revokeObjectURL(url),1000);
+
+  statusText.textContent =
+   format.toUpperCase() + " downloaded.";
+
+ } catch (error) {
+  statusText.textContent = error.message;
  }
 }
 
-function toggleImagePanel(force){
- const panel=document.getElementById("imagePanel");
- const open=typeof force==="boolean"?force:!panel.classList.contains("open");
- panel.classList.toggle("open",open);
- if(open)document.getElementById("imagePrompt").focus();
-}
 
-async function generateImage(){
- const prompt=document.getElementById("imagePrompt").value.trim();
- if(!prompt){
-  statusText.textContent="Enter an image description first.";
-  return;
- }
-
- const btn=document.getElementById("imageBtn");
- btn.disabled=true;
- statusText.textContent="Creating your image...";
-
- try{
-  const response=await fetch("/generate-image",{
-   method:"POST",
-   headers:{"Content-Type":"application/json"},
-   body:JSON.stringify({prompt})
-  });
-  const data=await response.json();
-  if(!response.ok)throw new Error(data.error||"Image generation failed.");
-  if(!data.image)throw new Error("No image was returned.");
-  addImage(data.image);
-  statusText.textContent="Image generated successfully.";
-  document.getElementById("imagePrompt").value="";
- }catch(error){
-  addMessage("Image generation error: "+error.message,"ai");
-  statusText.textContent="Image generation failed.";
- }finally{
-  btn.disabled=false;
- }
-}
-
-function newChat(){
+function newChat() {
  stopSpeaking();
- chat.innerHTML="";
- lastAnswer="";
- addMessage("Hello! I am Uniteaa AI. How can I help you today?","ai");
- statusText.textContent="New chat started.";
+
+ chat.innerHTML = "";
+ lastAnswer = "";
+
+ addMessage(
+  "Hello! I am Uniteaa AI. How can I help you today?",
+  "ai"
+ );
+
+ statusText.textContent = "New chat started.";
 }
 
-function clearChat(){newChat();}
 
-input.addEventListener("keydown",e=>{
- if(e.key==="Enter"&&!e.shiftKey){
-  e.preventDefault();
+function clearChat() {
+ newChat();
+}
+
+
+input.addEventListener("keydown",event => {
+ if (
+  event.key === "Enter" &&
+  !event.shiftKey
+ ) {
+  event.preventDefault();
   sendMessage();
  }
 });
-
-document.getElementById("imagePrompt").addEventListener("keydown",e=>{
- if(e.key==="Enter")generateImage();
-});
 </script>
+
 </body>
 </html>
