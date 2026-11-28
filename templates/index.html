@@ -5,7 +5,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#08111f">
-<title>Uniteaa AI</title>
+<meta name="description" content="Uniteaa AI is an AI assistant for answering questions, live web search, document understanding and more.">
+<meta name="robots" content="index, follow">
+
+<title>Uniteaa AI - Your AI Assistant</title>
+
+<!-- Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-YRGYVZD0YR"></script>
+<script>
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-YRGYVZD0YR');
+</script>
 
 <style>
 :root {
@@ -610,6 +622,14 @@ async function sendMessage() {
    "ai",
    data.sources || []
   );
+
+  // Count successful AI responses without sending message text.
+  if (typeof gtag === "function") {
+   gtag("event","chat_response_received",{
+    provider: data.provider || "unknown",
+    live_search_used: data.live_search_used ? "yes" : "no"
+   });
+  }
 
   if (data.live_search_used) {
    statusText.textContent =
